@@ -10,7 +10,7 @@ interface MatchGridProps {
 export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridProps) {
   if (loading) {
     return (
-      <div style={{
+      <div className="match-grid" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
         gap: 12, padding: '14px 20px',
@@ -43,7 +43,7 @@ export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridP
   }
 
   return (
-    <div style={{
+    <div className="match-grid" style={{
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
       gap: 12, padding: '14px 20px',

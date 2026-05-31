@@ -6,6 +6,7 @@ import SportsSidebar from '../components/SportsSidebar';
 import StatusTabs from '../components/StatusTabs';
 import MatchGrid from '../components/MatchGrid';
 import AdBanner from '../components/AdBanner';
+import AdPopup from '../components/AdPopup';
 import { fetchSports, fetchAllMatches, fetchMatchesBySport } from '../api';
 import type { Sport, EnrichedMatch } from '../types';
 import type { StatusFilter } from '../components/StatusTabs';
@@ -86,6 +87,7 @@ export default function Home() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <AdPopup />
       <Header
         liveCount={statusCounts.live}
         sports={sports}
@@ -94,14 +96,16 @@ export default function Home() {
         sportCounts={sportCounts}
       />
 
-      <div style={{ padding: '10px 20px 0', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ padding: '10px 16px 0', display: 'flex', justifyContent: 'center' }}>
         <AdBanner size="leaderboard" />
       </div>
 
       <div style={{ display: 'flex', flex: 1 }}>
         <SportsSidebar sports={sports} selected={selectedSport} onSelect={handleSportSelect} counts={sportCounts} />
+
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <div style={{ padding: '14px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          {/* Top bar */}
+          <div className="sports-home-mainbar" style={{ padding: '14px 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <div>
               <h1 style={{ fontFamily: 'Bebas Neue', fontSize: '1.4rem', letterSpacing: '0.06em', lineHeight: 1 }}>{currentSportName}</h1>
               <p style={{ fontSize: '0.72rem', color: 'var(--text3)', marginTop: 2 }}>{filteredMatches.length} match{filteredMatches.length !== 1 ? 'es' : ''}</p>
@@ -110,7 +114,7 @@ export default function Home() {
               <div style={{ position: 'relative' }}>
                 <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
                 <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search teams..."
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px 7px 28px', color: 'var(--text)', fontSize: '0.8rem', outline: 'none', width: 170 }}
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px 7px 28px', color: 'var(--text)', fontSize: '0.8rem', outline: 'none', width: 150 }}
                   onFocus={e => (e.currentTarget.style.borderColor = 'var(--border2)')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
                 />
@@ -121,15 +125,26 @@ export default function Home() {
               </button>
             </div>
           </div>
+
           <StatusTabs active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
           <MatchGrid matches={filteredMatches} onMatchClick={handleMatchClick} loading={loading} />
+
           {!loading && filteredMatches.length > 4 && (
-            <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ padding: '0 16px 20px', display: 'flex', justifyContent: 'center' }}>
               <AdBanner size="rectangle" />
             </div>
           )}
         </main>
       </div>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .sports-home-mainbar {
+            align-items: stretch !important;
+          }
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }

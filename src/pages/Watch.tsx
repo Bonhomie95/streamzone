@@ -26,7 +26,7 @@ export default function Watch() {
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [iframeError, setIframeError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showStreamList, setShowStreamList] = useState(true);
+  const [showStreamList, setShowStreamList] = useState(false);
   const playerWrapRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -311,7 +311,7 @@ export default function Watch() {
                 {showStreamList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
               {showStreamList && (
-                <StreamSidebar streams={streams} activeStream={activeStream} onSwitch={switchStream} />
+                <StreamSidebar streams={streams} activeStream={activeStream} onSwitch={switchStream} compact />
               )}
             </div>
           </div>
@@ -406,11 +406,12 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function StreamSidebar({ streams, activeStream, onSwitch, loading }: {
+function StreamSidebar({ streams, activeStream, onSwitch, loading, compact = false }: {
   streams: Stream[];
   activeStream: Stream | null;
   onSwitch: (s: Stream) => void;
   loading?: boolean;
+  compact?: boolean;
 }) {
   if (loading) {
     return (
@@ -440,7 +441,7 @@ function StreamSidebar({ streams, activeStream, onSwitch, loading }: {
       <div style={{ padding: '12px 14px 8px', fontSize: '0.68rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>
         {streams.length} Stream{streams.length !== 1 ? 's' : ''} Available
       </div>
-      <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+      <div className={compact ? 'stream-source-grid' : undefined} style={{ maxHeight: 380, overflowY: 'auto' }}>
         {streams.map((s, i) => {
           const isActive = activeStream?.embedUrl === s.embedUrl;
           return (
@@ -480,4 +481,3 @@ function StreamSidebar({ streams, activeStream, onSwitch, loading }: {
     </div>
   );
 }
-

@@ -1,57 +1,75 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-/**
- * AdBanner — Plug-and-play ad slot component.
- *
- * HOW TO ACTIVATE ADS:
- * ─────────────────────────────────────────────
- * Option A — Adsterra (Recommended for sports/streaming sites, no traffic minimum)
- *   1. Sign up at https://publishers.adsterra.com
- *   2. Add your site, choose "Display Banner" format
- *   3. Get your script tag and replace the placeholder below
- *   4. Set AD_PROVIDER = 'adsterra' and paste your key in ADSTERRA_KEY
- *
- * Option B — PopAds (Great CPM for streaming niches, instant approval)
- *   1. Sign up at https://www.popads.net/publishers.html
- *   2. Add site, get publisher code
- *   3. Set AD_PROVIDER = 'popads' and paste code in POPADS_CODE
- *
- * Option C — Google AdSense (if approved — sports aggregators often get rejected)
- *   1. Sign up at https://adsense.google.com
- *   2. Set AD_PROVIDER = 'adsense', fill CLIENT and SLOT IDs
- *
- * ⚠️  Note: DO NOT use AdSense on a site that aggregates third-party streams.
- *     Google will likely reject or ban the account. Adsterra or PopAds are safer bets.
- * ─────────────────────────────────────────────
- */
+type BannerProvider = 'adsterra' | 'adsense';
+type BannerSize = 'leaderboard' | 'rectangle' | 'mobile';
 
-const AD_PROVIDER: 'placeholder' | 'adsterra' | 'adsense' | 'popads' = 'placeholder';
+declare global {
+  interface Window {
+    adsbygoogle?: unknown[];
+  }
+}
 
-// Fill these in when you have your ad account:
 const ADSENSE_CLIENT = 'ca-pub-XXXXXXXXXXXXXXXX';
 const ADSENSE_SLOT = '1234567890';
-const ADSTERRA_KEY = 'YOUR_ADSTERRA_BANNER_KEY';
-const POPADS_CODE = 'YOUR_POPADS_PUBLISHER_CODE';
+
+const BANNER_ADS: Array<{
+  provider: BannerProvider;
+  key: string;
+  width: number;
+  height: number;
+  enabled: boolean;
+}> = [
+  {
+    provider: 'adsterra',
+    key: '1802d1371e71660e95ec2e93cb88b585',
+    width: 320,
+    height: 50,
+    enabled: true,
+  },
+  {
+    provider: 'adsterra',
+    key: '76bc25ee44f48e946e8ef02a1ab6124d',
+    width: 728,
+    height: 90,
+    enabled: true,
+  },
+];
 
 interface AdBannerProps {
-  size?: 'leaderboard' | 'rectangle' | 'mobile';
+  size?: BannerSize;
   className?: string;
 }
 
 export default function AdBanner({ size = 'leaderboard', className }: AdBannerProps) {
   const ref = useRef<HTMLDivElement>(null);
-
-  const dimensions = {
-    leaderboard: { width: 728, height: 90 },
-    rectangle: { width: 300, height: 250 },
-    mobile: { width: 320, height: 50 },
-  }[size];
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
   useEffect(() => {
-    if (!ref.current) return;
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
-    if (AD_PROVIDER === 'adsense') {
-      // inject AdSense <ins> tag
+  const ad = useMemo(() => {
+    const enabledAds = BANNER_ADS.filter(item => item.enabled);
+    if (enabledAds.length === 0) return null;
+
+    if (size === 'mobile' || viewportWidth < 560) {
+      return enabledAds.find(item => item.width === 320) ?? enabledAds[0];
+    }
+
+    return enabledAds.find(item => item.width === 728) ?? enabledAds[0];
+  }, [size, viewportWidth]);
+
+  const dimensions = ad ?? { width: size === 'mobile' ? 320 : 728, height: size === 'mobile' ? 50 : 90 };
+
+  useEffect(() => {
+    if (!ref.current || !ad) return;
+
+    const slot = ref.current;
+    slot.innerHTML = '';
+
+    if (ad.provider === 'adsense') {
       const ins = document.createElement('ins');
       ins.className = 'adsbygoogle';
       ins.style.display = 'block';
@@ -59,25 +77,39 @@ export default function AdBanner({ size = 'leaderboard', className }: AdBannerPr
       ins.setAttribute('data-ad-slot', ADSENSE_SLOT);
       ins.setAttribute('data-ad-format', 'auto');
       ins.setAttribute('data-full-width-responsive', 'true');
-      ref.current.appendChild(ins);
-      try { ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({}); } catch { /* */ }
+      slot.appendChild(ins);
+      try {
+        window.adsbygoogle = window.adsbygoogle || [];
+        window.adsbygoogle.push({});
+      } catch { /* */ }
     }
 
-    if (AD_PROVIDER === 'adsterra') {
-      const script = document.createElement('script');
-      script.async = true;
-      script.src = `//www.effectivecpmads.com/${ADSTERRA_KEY}.js`;
-      ref.current.appendChild(script);
+    if (ad.provider === 'adsterra') {
+      const optionsScript = document.createElement('script');
+      optionsScript.text = `
+        atOptions = {
+          'key' : '${ad.key}',
+          'format' : 'iframe',
+          'height' : ${ad.height},
+          'width' : ${ad.width},
+          'params' : {}
+        };
+      `;
+
+      const invokeScript = document.createElement('script');
+      invokeScript.async = false;
+      invokeScript.src = `https://www.highperformanceformat.com/${ad.key}/invoke.js`;
+
+      slot.appendChild(optionsScript);
+      slot.appendChild(invokeScript);
     }
 
-    if (AD_PROVIDER === 'popads') {
-      const script = document.createElement('script');
-      script.text = `var popns=popns||[];popns.push(["${POPADS_CODE}"]);`;
-      ref.current.appendChild(script);
-    }
-  }, []);
+    return () => {
+      slot.innerHTML = '';
+    };
+  }, [ad]);
 
-  if (AD_PROVIDER === 'placeholder') {
+  if (!ad) {
     return (
       <div className={className} style={{
         width: '100%', maxWidth: dimensions.width,
@@ -96,5 +128,17 @@ export default function AdBanner({ size = 'leaderboard', className }: AdBannerPr
     );
   }
 
-  return <div ref={ref} className={className} style={{ width: '100%', maxWidth: dimensions.width, margin: '0 auto' }} />;
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        width: '100%',
+        maxWidth: dimensions.width,
+        minHeight: dimensions.height,
+        margin: '0 auto',
+        overflow: 'hidden',
+      }}
+    />
+  );
 }

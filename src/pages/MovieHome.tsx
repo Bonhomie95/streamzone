@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, Star, Play, TrendingUp, Flame, Award, Clock, Tv } from 'lucide-react';
+import { Search, X, Star, Play, TrendingUp, Flame, Award, Clock, Tv, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import Header from '../components/Header';
 import AdBanner from '../components/AdBanner';
+import AdPopup from '../components/AdPopup';
 import {
   fetchTrending, fetchPopular, fetchTopRated, fetchNowPlaying,
   fetchUpcomingMovies, fetchByGenre, searchMovies, fetchGenres
@@ -31,6 +32,11 @@ export default function MovieHome() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
   const [searching, setSearching] = useState(false);
+  const [filterYear, setFilterYear] = useState<string>('');
+  const [filterRating, setFilterRating] = useState<string>('');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('popularity');
+  const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [heroIdx, setHeroIdx] = useState(0);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -89,10 +95,21 @@ export default function MovieHome() {
   }
 
   const hero = featured[heroIdx];
-  const displayMovies = searchQuery ? searchResults : movies;
+  const displayMovies = (() => {
+    let list = searchQuery ? searchResults : movies;
+    if (filterType !== 'all') list = list.filter(m => m.mediaType === filterType);
+    if (filterYear) list = list.filter(m => m.year === filterYear);
+    if (filterRating) list = list.filter(m => m.rating >= parseFloat(filterRating));
+    if (sortBy === 'rating') list = [...list].sort((a, b) => b.rating - a.rating);
+    else if (sortBy === 'year_desc') list = [...list].sort((a, b) => (b.year || '').localeCompare(a.year || ''));
+    else if (sortBy === 'year_asc') list = [...list].sort((a, b) => (a.year || '').localeCompare(b.year || ''));
+    else list = [...list].sort((a, b) => b.popularity - a.popularity);
+    return list;
+  })();
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <AdPopup />
       <Header />
 
       {/* Hero */}
@@ -211,13 +228,82 @@ export default function MovieHome() {
             ))}
           </div>
 
-          {/* Section title */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          {/* Section title + filter toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
             <h2 style={{ fontFamily: 'Bebas Neue', fontSize: '1.25rem', letterSpacing: '0.06em' }}>
               {searchQuery ? `Results for "${searchQuery}"` : selectedGenre ? genres.find(g => g.id === selectedGenre)?.name : CATEGORIES.find(c => c.id === activeCategory)?.label ?? 'Browse'}
             </h2>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>{displayMovies.length} titles</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>{displayMovies.length} titles</span>
+              <button onClick={() => setShowFilters(v => !v)} style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: showFilters ? 'var(--accent-dim)' : 'var(--surface)',
+                border: `1px solid ${showFilters ? 'rgba(230,57,70,0.4)' : 'var(--border)'}`,
+                borderRadius: 8, padding: '5px 10px',
+                color: showFilters ? 'var(--accent)' : 'var(--text2)', fontSize: '0.78rem', fontWeight: 500,
+              }}>
+                <SlidersHorizontal size={12} />
+                Filters
+                {(filterYear || filterRating || filterType !== 'all' || sortBy !== 'popularity') && (
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
+                )}
+              </button>
+            </div>
           </div>
+
+          {/* Filter bar */}
+          {showFilters && (
+            <div style={{
+              display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14,
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '12px 14px', animation: 'fadeIn .15s ease',
+            }}>
+              {/* Type */}
+              <FilterSelect label="Type" value={filterType} onChange={setFilterType} options={[
+                { value: 'all', label: 'All' },
+                { value: 'movie', label: 'Movies' },
+                { value: 'tv', label: 'TV Shows' },
+              ]} />
+
+              {/* Min Rating */}
+              <FilterSelect label="Min Rating" value={filterRating} onChange={setFilterRating} options={[
+                { value: '', label: 'Any' },
+                { value: '9', label: '9+' },
+                { value: '8', label: '8+' },
+                { value: '7', label: '7+' },
+                { value: '6', label: '6+' },
+                { value: '5', label: '5+' },
+              ]} />
+
+              {/* Year */}
+              <FilterSelect label="Year" value={filterYear} onChange={setFilterYear} options={[
+                { value: '', label: 'Any' },
+                ...Array.from({ length: 30 }, (_, i) => {
+                  const y = String(new Date().getFullYear() - i);
+                  return { value: y, label: y };
+                }),
+              ]} />
+
+              {/* Sort */}
+              <FilterSelect label="Sort by" value={sortBy} onChange={setSortBy} options={[
+                { value: 'popularity', label: 'Popularity' },
+                { value: 'rating', label: 'Rating' },
+                { value: 'year_desc', label: 'Newest first' },
+                { value: 'year_asc', label: 'Oldest first' },
+              ]} />
+
+              {/* Clear */}
+              {(filterYear || filterRating || filterType !== 'all' || sortBy !== 'popularity') && (
+                <button onClick={() => { setFilterYear(''); setFilterRating(''); setFilterType('all'); setSortBy('popularity'); }} style={{
+                  display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px',
+                  background: 'none', border: '1px solid var(--border)', borderRadius: 7,
+                  color: 'var(--text3)', fontSize: '0.75rem', alignSelf: 'flex-end', marginBottom: 2,
+                }}>
+                  <X size={11} /> Clear
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Grid */}
           {(loading || searching) ? (
@@ -307,6 +393,35 @@ function MovieSkeleton() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function FilterSelect({ label, value, onChange, options }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+      <div style={{ position: 'relative' }}>
+        <select
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{
+            background: 'var(--surface2)', border: '1px solid var(--border)',
+            borderRadius: 7, padding: '5px 24px 5px 10px',
+            color: value ? 'var(--text)' : 'var(--text3)',
+            fontSize: '0.78rem', outline: 'none', appearance: 'none',
+            cursor: 'pointer', minWidth: 100,
+          }}
+        >
+          {options.map(o => <option key={o.value} value={o.value} style={{ background: 'var(--bg2)' }}>{o.label}</option>)}
+        </select>
+        <ChevronDown size={11} style={{ position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+      </div>
     </div>
   );
 }

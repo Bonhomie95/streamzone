@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Tv2, Menu, X, Zap, Film, Trophy } from 'lucide-react';
 import type { Sport } from '../types';
@@ -24,11 +24,14 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
   const [menuOpen, setMenuOpen] = useState(false);
   const isMovies = location.pathname.startsWith('/movies');
 
-  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+  function go(path: string) {
+    setMenuOpen(false);
+    navigate(path);
+  }
 
   return (
     <>
-      <header style={{
+      <header className="app-header" style={{
         position: 'sticky', top: 0, zIndex: 100,
         background: 'rgba(8,10,15,0.96)', backdropFilter: 'blur(24px)',
         borderBottom: '1px solid var(--border)',
@@ -36,7 +39,7 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
         padding: '0 20px', gap: 12,
       }}>
         {/* Logo */}
-        <button onClick={() => navigate(isMovies ? '/movies' : '/')} style={{
+        <button onClick={() => go('/')} style={{
           display: 'flex', alignItems: 'center', gap: 8,
           background: 'none', border: 'none', padding: 0, flexShrink: 0,
         }}>
@@ -49,7 +52,7 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
         </button>
 
         {/* Mode tabs */}
-        <div style={{
+        <div className="mode-tabs" style={{
           display: 'flex', alignItems: 'center', gap: 3,
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, padding: 3, marginLeft: 8,
@@ -60,7 +63,7 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
           ].map(tab => {
             const active = tab.path === '/' ? !isMovies : isMovies;
             return (
-              <button key={tab.path} onClick={() => navigate(tab.path)} style={{
+              <button key={tab.path} onClick={() => go(tab.path)} style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 padding: '5px 12px', borderRadius: 7, border: 'none',
                 background: active ? 'var(--accent)' : 'transparent',
@@ -79,7 +82,7 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
 
         {/* Live badge */}
         {liveCount > 0 && !isMovies && (
-          <div style={{
+          <div className="live-badge" style={{
             display: 'flex', alignItems: 'center', gap: 5,
             background: 'rgba(230,57,70,0.1)', border: '1px solid rgba(230,57,70,0.3)',
             borderRadius: 20, padding: '3px 10px',
@@ -96,7 +99,7 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
 
         {/* Hamburger — mobile, sports only */}
         {!isMovies && sports.length > 0 && (
-          <button className="mobile-only" onClick={() => setMenuOpen(v => !v)} style={{
+          <button className="mobile-only nav-menu-button" onClick={() => setMenuOpen(v => !v)} style={{
             background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 8, padding: 7, color: 'var(--text2)', display: 'flex',
           }}>
@@ -107,7 +110,7 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
 
       {/* Mobile sport menu */}
       {menuOpen && (
-        <div style={{
+        <div className="mobile-sport-menu" style={{
           position: 'fixed', top: 'var(--header-h)', left: 0, right: 0, bottom: 0,
           background: 'var(--bg2)', zIndex: 99, overflowY: 'auto',
           borderTop: '1px solid var(--border)', animation: 'fadeIn .15s ease',

@@ -481,7 +481,7 @@ export default function MovieWatch() {
             )}
 
             {/* Mobile source pills */}
-            <div className="mobile-only" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div className="mobile-only movie-source-grid" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {streams.map(s => {
                 const status = sourceStatuses[s.id];
                 const isActive = activeStream?.id === s.id;
@@ -593,7 +593,7 @@ function WatchTopBar() {
       }}>
         <ArrowLeft size={14} /> Back
       </button>
-      <button onClick={() => navigate('/movies')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0 }}>
+      <button onClick={() => navigate('/')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0 }}>
         <div style={{ background: 'var(--accent)', borderRadius: 7, padding: 5, display: 'flex' }}>
           <Tv2 size={15} color="#fff" />
         </div>
