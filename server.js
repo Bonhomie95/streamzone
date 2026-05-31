@@ -158,12 +158,20 @@ app.get("/api/status", async (req, res) => {
   res.json({ keys: statuses, activeKeyIndex });
 });
 
-app.listen(PORT, () => {
-  console.log(`[StreamZone proxy] http://localhost:${PORT}`);
-});
-
+// ─── Serve React frontend (Option C — all on Railway) ─────────────
 import { fileURLToPath } from "url";
 import path from "path";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-app.use(express.static(path.join(__dirname, "dist")));
-app.get("*", (_, res) => res.sendFile(path.join(__dirname, "dist/index.html")));
+const distPath = path.join(__dirname, "dist");
+
+app.use(express.static(distPath));
+
+// All non-API routes → React app (client-side routing)
+app.get("/{*path}", (req, res) => {
+  res.sendFile(path.join(distPath, "index.html"));
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[StreamZone] running on port ${PORT}`);
+});
