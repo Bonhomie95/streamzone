@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react';
 import type { EnrichedMatch } from '../types';
+import { fetchBulkViewCounts } from '../hooks/useViewCount';
 import MatchCard from './MatchCard';
 
 interface MatchGridProps {
@@ -8,9 +10,16 @@ interface MatchGridProps {
 }
 
 export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridProps) {
+  const [viewCounts, setViewCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (matches.length === 0) return;
+    fetchBulkViewCounts(matches.map(m => m.id)).then(setViewCounts);
+  }, [matches.map(m => m.id).join(',')]);
+
   if (loading) {
     return (
-      <div className="match-grid" style={{
+      <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
         gap: 12, padding: '14px 20px',
@@ -43,13 +52,13 @@ export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridP
   }
 
   return (
-    <div className="match-grid" style={{
+    <div style={{
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
       gap: 12, padding: '14px 20px',
     }}>
       {matches.map(m => (
-        <MatchCard key={m.id} match={m} onClick={() => onMatchClick(m)} />
+        <MatchCard key={m.id} match={m} onClick={() => onMatchClick(m)} viewCount={viewCounts[m.id] ?? null} />
       ))}
     </div>
   );

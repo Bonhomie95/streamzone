@@ -5,6 +5,7 @@ import {
   ExternalLink, Star, Clock, ChevronDown, ChevronUp, Tv2, Trophy, Film
 } from 'lucide-react';
 import { fetchStreams, fetchAllMatches, badgeUrl } from '../api';
+import ViewerBadge from '../components/ViewerBadge';
 import AdBanner from '../components/AdBanner';
 import type { EnrichedMatch, Stream } from '../types';
 
@@ -26,7 +27,7 @@ export default function Watch() {
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [iframeError, setIframeError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showStreamList, setShowStreamList] = useState(false);
+  const [showStreamList, setShowStreamList] = useState(true);
   const playerWrapRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -167,6 +168,22 @@ export default function Watch() {
           )}
         </div>
 
+        {/* Viewer count badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <ViewerBadge id={matchId ?? ''} active={!!activeStream} large />
+          {match.status === 'live' && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              background: 'rgba(45,206,137,0.1)', border: '1px solid rgba(45,206,137,0.25)',
+              borderRadius: 20, padding: '4px 12px',
+              fontSize: '0.75rem', fontWeight: 700, color: 'var(--green)',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', display: 'inline-block', animation: 'pulse 1.2s infinite' }} />
+              LIVE NOW
+            </span>
+          )}
+        </div>
+
         {/* Two-column: player left, stream list right */}
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
@@ -272,6 +289,7 @@ export default function Watch() {
                   <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
                     {activeStream.source} · Stream #{activeStream.streamNo}
                   </span>
+
                   {activeStream.hd && (
                     <span style={{ fontSize: '0.62rem', background: 'var(--gold)', color: '#000', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>HD</span>
                   )}
@@ -311,7 +329,7 @@ export default function Watch() {
                 {showStreamList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
               {showStreamList && (
-                <StreamSidebar streams={streams} activeStream={activeStream} onSwitch={switchStream} compact />
+                <StreamSidebar streams={streams} activeStream={activeStream} onSwitch={switchStream} />
               )}
             </div>
           </div>
@@ -345,25 +363,27 @@ export default function Watch() {
 function TopBar({ onBack }: { onBack: () => void }) {
   const nav = useNavigate();
   return (
-    <div className="watch-topbar" style={{
-      display: 'flex', alignItems: 'center', gap: 12,
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
       padding: '0 16px', height: 'var(--header-h)',
       background: 'rgba(8,11,16,0.95)', backdropFilter: 'blur(20px)',
       borderBottom: '1px solid var(--border)',
       position: 'sticky', top: 0, zIndex: 100, flexShrink: 0,
     }}>
+      {/* Back */}
       <button onClick={onBack} style={{
-        display: 'flex', alignItems: 'center', gap: 7,
+        display: 'flex', alignItems: 'center', gap: 6,
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 8, padding: '6px 12px',
-        color: 'var(--text2)', fontSize: '0.82rem', fontWeight: 500,
+        color: 'var(--text2)', fontSize: '0.82rem', fontWeight: 500, flexShrink: 0,
       }}>
-        <ArrowLeft size={14} />
-        Back
+        <ArrowLeft size={14} /> Back
       </button>
+
+      {/* Logo */}
       <button onClick={() => nav('/')} style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+        background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0,
       }}>
         <div style={{ background: 'var(--accent)', borderRadius: 7, padding: '5px', display: 'flex' }}>
           <Tv2 size={15} color="#fff" />
@@ -372,36 +392,30 @@ function TopBar({ onBack }: { onBack: () => void }) {
           STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
         </span>
       </button>
-      <WatchModeTabs active="sports" />
-    </div>
-  );
-}
 
-function WatchModeTabs({ active }: { active: 'sports' | 'movies' }) {
-  const nav = useNavigate();
-  return (
-    <div className="watch-mode-tabs" style={{
-      display: 'flex', alignItems: 'center', gap: 3,
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 10, padding: 3, marginLeft: 'auto',
-    }}>
-      {[
-        { id: 'sports', path: '/', label: 'Sports', icon: <Trophy size={13} /> },
-        { id: 'movies', path: '/movies', label: 'Movies', icon: <Film size={13} /> },
-      ].map(tab => {
-        const isActive = active === tab.id;
-        return (
-          <button key={tab.id} onClick={() => nav(tab.path)} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            padding: '5px 12px', borderRadius: 7, border: 'none',
-            background: isActive ? 'var(--accent)' : 'transparent',
-            color: isActive ? '#fff' : 'var(--text2)',
-            fontSize: '0.8rem', fontWeight: isActive ? 700 : 400,
-          }}>
-            {tab.icon}{tab.label}
-          </button>
-        );
-      })}
+      {/* Sports / Movies tabs */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 3,
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 10, padding: 3,
+      }}>
+        <button onClick={() => nav('/')} style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '5px 11px', borderRadius: 7, border: 'none',
+          background: 'var(--accent)', color: '#fff',
+          fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+        }}>
+          <Trophy size={12} /> Sports
+        </button>
+        <button onClick={() => nav('/movies')} style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '5px 11px', borderRadius: 7, border: 'none',
+          background: 'transparent', color: 'var(--text2)',
+          fontSize: '0.78rem', fontWeight: 400, cursor: 'pointer',
+        }}>
+          <Film size={12} /> Movies
+        </button>
+      </div>
     </div>
   );
 }
@@ -436,12 +450,11 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function StreamSidebar({ streams, activeStream, onSwitch, loading, compact = false }: {
+function StreamSidebar({ streams, activeStream, onSwitch, loading }: {
   streams: Stream[];
   activeStream: Stream | null;
   onSwitch: (s: Stream) => void;
   loading?: boolean;
-  compact?: boolean;
 }) {
   if (loading) {
     return (
@@ -471,7 +484,7 @@ function StreamSidebar({ streams, activeStream, onSwitch, loading, compact = fal
       <div style={{ padding: '12px 14px 8px', fontSize: '0.68rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>
         {streams.length} Stream{streams.length !== 1 ? 's' : ''} Available
       </div>
-      <div className={compact ? 'stream-source-grid' : undefined} style={{ maxHeight: 380, overflowY: 'auto' }}>
+      <div style={{ maxHeight: 380, overflowY: 'auto' }}>
         {streams.map((s, i) => {
           const isActive = activeStream?.embedUrl === s.embedUrl;
           return (

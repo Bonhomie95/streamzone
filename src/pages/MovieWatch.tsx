@@ -6,6 +6,7 @@ import {
   AlertTriangle, CheckCircle, Loader, RefreshCw, Trophy, Film
 } from 'lucide-react';
 import { fetchMovieDetails, fetchSimilar, getEmbedSources } from '../api';
+import ViewerBadge from '../components/ViewerBadge';
 import { useWatchProgress, withTimestamp, formatDuration, loadProgress } from '../hooks/useWatchProgress';
 import AdBanner from '../components/AdBanner';
 import type { Movie, MediaType, Stream } from '../types';
@@ -344,6 +345,11 @@ export default function MovieWatch() {
           </div>
         </div>
 
+        {/* ── Viewer count ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <ViewerBadge id={id} active={probeStatus === 'found'} large />
+        </div>
+
         {/* ── TV Episode selector ── */}
         {mediaType === 'tv' && movie.seasons && movie.seasons.length > 0 && (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
@@ -473,9 +479,12 @@ export default function MovieWatch() {
                       ⏱ {formatDuration(elapsed)}
                     </span>
                   )}
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
-                    {streams.indexOf(activeStream) + 1} of {streams.length}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
+                      {streams.indexOf(activeStream) + 1} of {streams.length}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}

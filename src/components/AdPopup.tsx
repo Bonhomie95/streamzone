@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * PopupAd — injects the effectivecpmnetwork pop script once per 15 minutes.
+ * PopupAd — injects the effectivecpmnetwork pop script once per 30 minutes.
  * Mount this ONLY on home pages (sports home + movie home).
  * Do NOT mount on watch pages — the stream embeds already have their own ads.
  *
@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react';
  */
 
 const POPUP_KEY = 'sz_popup_last';
-const INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const INTERVAL_MS = 30 * 60 * 1000;
 
 function shouldShowPopup(): boolean {
   try {

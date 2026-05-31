@@ -1,10 +1,13 @@
 import { Clock, Star, ChevronRight } from 'lucide-react';
 import type { EnrichedMatch } from '../types';
+import ViewerBadge from './ViewerBadge';
+import { formatViewCount } from '../hooks/useViewCount';
 import { badgeUrl } from '../api';
 
 interface MatchCardProps {
   match: EnrichedMatch;
   onClick: () => void;
+  viewCount?: number | null;
 }
 
 function formatDate(ms: number) {
@@ -15,7 +18,7 @@ function formatDate(ms: number) {
   return isToday ? `Today ${time}` : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
 }
 
-export default function MatchCard({ match, onClick }: MatchCardProps) {
+export default function MatchCard({ match, onClick, viewCount }: MatchCardProps) {
   const isLive = match.status === 'live';
   const isFinished = match.status === 'finished';
   const hasTeams = match.teams?.home && match.teams?.away;
@@ -108,6 +111,11 @@ export default function MatchCard({ match, onClick }: MatchCardProps) {
 
         <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '0.67rem', color: 'var(--text3)' }}>{match.sources.length} source{match.sources.length !== 1 ? 's' : ''}</span>
+          {viewCount == null ? (
+            <ViewerBadge id={match.id} active={isLive} />
+          ) : (
+            <span style={{ fontSize: '0.67rem', color: 'var(--text3)' }}>{formatViewCount(viewCount)} watching</span>
+          )}
           <span style={{ fontSize: '0.67rem', color: isLive ? 'var(--green)' : 'var(--text3)', fontWeight: 600 }}>
             {isLive ? '▶ Watch Now' : isFinished ? 'Replay' : 'Upcoming'}
           </span>
