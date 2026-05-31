@@ -161,9 +161,9 @@ export default function MovieHome() {
       )}
 
       {/* Search bar */}
-      <div style={{ padding: '16px 20px 0' }}>
+      <div style={{ padding: '16px 20px 0', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <AdBanner size="leaderboard" />
-        <div style={{ position: 'relative', maxWidth: 520, marginTop: 14 }}>
+        <div style={{ position: 'relative', width: '100%', maxWidth: 520, marginTop: 14 }}>
           <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }} />
           <input
             value={searchQuery}
