@@ -112,6 +112,28 @@ a { color: inherit; text-decoration: none; }
     justify-content: center;
     min-height: 36px;
   }
+  .watch-topbar {
+    flex-wrap: wrap;
+    height: auto !important;
+    min-height: var(--header-h);
+    padding: 8px 12px !important;
+    gap: 8px !important;
+  }
+  .watch-topbar > button:first-child {
+    order: 1;
+  }
+  .watch-topbar > button:nth-child(2) {
+    order: 2;
+    min-width: 0;
+  }
+  .watch-mode-tabs {
+    order: 3;
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  .watch-mode-tabs button {
+    flex: 1;
+  }
 }
 @media (min-width: 769px) {
   .mobile-only { display: none !important; }

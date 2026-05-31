@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Star, ChevronDown, ChevronUp, ExternalLink,
   Wifi, WifiOff, Maximize2, Minimize2, Tv2, ChevronRight,
-  AlertTriangle, CheckCircle, Loader, RefreshCw
+  AlertTriangle, CheckCircle, Loader, RefreshCw, Trophy, Film
 } from 'lucide-react';
 import { fetchMovieDetails, fetchSimilar, getEmbedSources } from '../api';
 import { useWatchProgress, withTimestamp, formatDuration, loadProgress } from '../hooks/useWatchProgress';
@@ -579,7 +579,7 @@ export default function MovieWatch() {
 function WatchTopBar() {
   const navigate = useNavigate();
   return (
-    <div style={{
+    <div className="watch-topbar" style={{
       display: 'flex', alignItems: 'center', gap: 12,
       padding: '0 16px', height: 'var(--header-h)',
       background: 'rgba(8,10,15,0.96)', backdropFilter: 'blur(20px)',
@@ -601,6 +601,36 @@ function WatchTopBar() {
           STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
         </span>
       </button>
+      <WatchModeTabs active="movies" />
+    </div>
+  );
+}
+
+function WatchModeTabs({ active }: { active: 'sports' | 'movies' }) {
+  const navigate = useNavigate();
+  return (
+    <div className="watch-mode-tabs" style={{
+      display: 'flex', alignItems: 'center', gap: 3,
+      background: 'var(--surface)', border: '1px solid var(--border)',
+      borderRadius: 10, padding: 3, marginLeft: 'auto',
+    }}>
+      {[
+        { id: 'sports', path: '/', label: 'Sports', icon: <Trophy size={13} /> },
+        { id: 'movies', path: '/movies', label: 'Movies', icon: <Film size={13} /> },
+      ].map(tab => {
+        const isActive = active === tab.id;
+        return (
+          <button key={tab.id} onClick={() => navigate(tab.path)} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            padding: '5px 12px', borderRadius: 7, border: 'none',
+            background: isActive ? 'var(--accent)' : 'transparent',
+            color: isActive ? '#fff' : 'var(--text2)',
+            fontSize: '0.8rem', fontWeight: isActive ? 700 : 400,
+          }}>
+            {tab.icon}{tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -19,6 +19,8 @@ export default function MatchCard({ match, onClick }: MatchCardProps) {
   const isLive = match.status === 'live';
   const isFinished = match.status === 'finished';
   const hasTeams = match.teams?.home && match.teams?.away;
+  const homeBadge = match.teams?.home?.badge ? badgeUrl(match.teams.home.badge) : '';
+  const awayBadge = match.teams?.away?.badge ? badgeUrl(match.teams.away.badge) : '';
 
   return (
     <div onClick={onClick} style={{
@@ -77,18 +79,22 @@ export default function MatchCard({ match, onClick }: MatchCardProps) {
         {hasTeams ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, flex: 1 }}>
-              <img src={badgeUrl(match.teams!.home!.badge)} alt={match.teams!.home!.name}
-                width={36} height={36} style={{ objectFit: 'contain' }}
-                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              {homeBadge && (
+                <img src={homeBadge} alt={match.teams!.home!.name}
+                  width={36} height={36} style={{ objectFit: 'contain' }}
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              )}
               <span style={{ fontSize: '0.74rem', fontWeight: 600, textAlign: 'center', color: 'var(--text)', lineHeight: 1.2 }}>
                 {match.teams!.home!.name}
               </span>
             </div>
             <span style={{ fontFamily: 'Bebas Neue', fontSize: '1rem', color: 'var(--text3)', letterSpacing: '0.1em', minWidth: 28, textAlign: 'center' }}>VS</span>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, flex: 1 }}>
-              <img src={badgeUrl(match.teams!.away!.badge)} alt={match.teams!.away!.name}
-                width={36} height={36} style={{ objectFit: 'contain' }}
-                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              {awayBadge && (
+                <img src={awayBadge} alt={match.teams!.away!.name}
+                  width={36} height={36} style={{ objectFit: 'contain' }}
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              )}
               <span style={{ fontSize: '0.74rem', fontWeight: 600, textAlign: 'center', color: 'var(--text)', lineHeight: 1.2 }}>
                 {match.teams!.away!.name}
               </span>

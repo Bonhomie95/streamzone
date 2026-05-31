@@ -11,6 +11,7 @@ declare global {
 
 const ADSENSE_CLIENT = 'ca-pub-XXXXXXXXXXXXXXXX';
 const ADSENSE_SLOT = '1234567890';
+const LOAD_REMOTE_ADS_ON_LOCALHOST = false;
 
 const BANNER_ADS: Array<{
   provider: BannerProvider;
@@ -43,6 +44,7 @@ interface AdBannerProps {
 export default function AdBanner({ size = 'leaderboard', className }: AdBannerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
   useEffect(() => {
     const onResize = () => setViewportWidth(window.innerWidth);
@@ -109,7 +111,7 @@ export default function AdBanner({ size = 'leaderboard', className }: AdBannerPr
     };
   }, [ad]);
 
-  if (!ad) {
+  if (!ad || (isLocalhost && !LOAD_REMOTE_ADS_ON_LOCALHOST)) {
     return (
       <div className={className} style={{
         width: '100%', maxWidth: dimensions.width,
@@ -122,7 +124,7 @@ export default function AdBanner({ size = 'leaderboard', className }: AdBannerPr
         flexShrink: 0,
       }}>
         <span style={{ fontSize: '0.68rem', color: 'var(--text3)', fontWeight: 600, letterSpacing: '0.08em' }}>
-          AD SLOT · {dimensions.width}×{dimensions.height}
+          {isLocalhost ? 'LOCAL AD SLOT' : 'AD SLOT'} · {dimensions.width}×{dimensions.height}
         </span>
       </div>
     );
