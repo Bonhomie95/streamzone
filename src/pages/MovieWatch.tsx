@@ -203,7 +203,7 @@ export default function MovieWatch() {
         <AdBanner size="leaderboard" />
       </div>
 
-      <div style={{ maxWidth: 'min(1600px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(24px, 3vw, 56px)', display: 'flex', flexDirection: 'column', gap: 'clamp(12px, 1.5vw, 24px)' }}>
+      <div style={{ maxWidth: 'min(2400px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(24px, 3vw, 56px)', display: 'flex', flexDirection: 'column', gap: 'clamp(12px, 1.5vw, 24px)' }}>
 
         {/* ── Resume banner ── */}
         {showResumeBanner && (
@@ -396,11 +396,14 @@ export default function MovieWatch() {
         <div style={{ display: 'flex', gap: 'clamp(10px, 1.2vw, 24px)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
           {/* Player */}
-          <div style={{ flex: '1 1 clamp(300px, 60vw, 900px)', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: '1 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div id="movie-player" style={{
               position: 'relative', background: '#000',
               borderRadius: isFullscreen ? 0 : 'var(--radius)',
-              border: '1px solid var(--border)', aspectRatio: '16/9',
+              border: '1px solid var(--border)',
+              width: '100%',
+              aspectRatio: '16/9',
+              minHeight: 'clamp(200px, calc((100vw - clamp(240px, 20vw, 400px) - clamp(80px, 8vw, 160px)) * 9 / 16), 90vh)',
               overflow: 'hidden',
             }}>
               {/* Probing overlay */}

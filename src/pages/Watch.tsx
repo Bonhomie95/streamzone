@@ -137,7 +137,7 @@ export default function Watch() {
       </div>
 
       {/* Main layout: player area + stream sidebar */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: 'min(1600px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(16px, 2.5vw, 48px)', gap: 'clamp(12px, 1.5vw, 24px)' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: 'min(2400px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(16px, 2.5vw, 48px)', gap: 'clamp(12px, 1.5vw, 24px)' }}>
 
         {/* Match title row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -187,8 +187,8 @@ export default function Watch() {
         {/* Two-column: player left, stream list right */}
         <div style={{ display: 'flex', gap: 'clamp(10px, 1.2vw, 24px)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
-          {/* Player column */}
-          <div style={{ flex: '1 1 clamp(300px, 60vw, 900px)', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'clamp(8px, 1vw, 16px)' }}>
+          {/* Player column — flex:1 so it fills ALL remaining width after sidebar */}
+          <div style={{ flex: '1 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'clamp(8px, 1vw, 16px)' }}>
 
             {/* Player box */}
             <div
@@ -199,8 +199,10 @@ export default function Watch() {
                 borderRadius: isFullscreen ? 0 : 'var(--radius)',
                 overflow: 'hidden',
                 border: isFullscreen ? 'none' : '1px solid var(--border)',
-                aspectRatio: '16/9',
                 width: '100%',
+                aspectRatio: '16/9',
+                /* Fallback height if aspectRatio fails to resolve (e.g. flex width not computed) */
+                minHeight: 'clamp(200px, calc((100vw - clamp(240px, 20vw, 400px) - clamp(80px, 8vw, 160px)) * 9 / 16), 90vh)',
               }}
             >
               {loadingStreams ? (
