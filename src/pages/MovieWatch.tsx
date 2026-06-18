@@ -443,7 +443,7 @@ export default function MovieWatch() {
                 <iframe
                   key={activeStream.embedUrl}
                   src={activeStream.embedUrl}
-                  style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
                   onError={() => setIframeError(true)}
