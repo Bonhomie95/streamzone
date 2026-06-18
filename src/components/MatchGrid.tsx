@@ -9,21 +9,34 @@ interface MatchGridProps {
   loading: boolean;
 }
 
+// Responsive card min width: wider screens get bigger cards
+function getCardMinWidth(): string {
+  const w = window.innerWidth;
+  if (w >= 3840) return '420px';
+  if (w >= 2560) return '340px';
+  if (w >= 1600) return '280px';
+  return '240px';
+}
+
 export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridProps) {
   const [viewCounts, setViewCounts] = useState<Record<string, number>>({});
+  const minWidth = getCardMinWidth();
 
   useEffect(() => {
     if (matches.length === 0) return;
     fetchBulkViewCounts(matches.map(m => m.id)).then(setViewCounts);
   }, [matches.map(m => m.id).join(',')]);
 
+  const gridStyle = {
+    display: 'grid',
+    gridTemplateColumns: `repeat(auto-fill, minmax(${minWidth}, 1fr))`,
+    gap: 'clamp(10px, 1.2vw, 20px)',
+    padding: 'clamp(12px, 1.5vw, 28px) clamp(14px, 2vw, 36px)',
+  };
+
   if (loading) {
     return (
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-        gap: 12, padding: '14px 20px',
-      }}>
+      <div style={gridStyle}>
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} style={{
             height: 155, borderRadius: 'var(--radius)',
@@ -52,11 +65,7 @@ export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridP
   }
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-      gap: 12, padding: '14px 20px',
-    }}>
+    <div style={gridStyle}>
       {matches.map(m => (
         <MatchCard key={m.id} match={m} onClick={() => onMatchClick(m)} viewCount={viewCounts[m.id] ?? null} />
       ))}

@@ -137,13 +137,13 @@ export default function Watch() {
       </div>
 
       {/* Main layout: player area + stream sidebar */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: 1400, width: '100%', margin: '0 auto', padding: '12px 16px 24px', gap: 16 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: 'min(1600px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(16px, 2.5vw, 48px)', gap: 'clamp(12px, 1.5vw, 24px)' }}>
 
         {/* Match title row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           {hasTeams ? (
             <>
-              <TeamBadge badge={match.teams!.home!.badge} name={match.teams!.home!.name} size={40} />
+              <TeamBadge badge={match.teams!.home!.badge} name={match.teams!.home!.name} size={Math.min(56, Math.max(40, window.innerWidth / 50))} />
               <div style={{ textAlign: 'center', flex: 1, minWidth: 120 }}>
                 <div style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.1rem, 3vw, 1.8rem)', letterSpacing: '0.06em', lineHeight: 1 }}>
                   {match.teams!.home!.name} <span style={{ color: 'var(--text3)' }}>vs</span> {match.teams!.away!.name}
@@ -155,7 +155,7 @@ export default function Watch() {
                   {!isLive && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.72rem', color: 'var(--text3)' }}><Clock size={11} />{formatDate(match.date)}</span>}
                 </div>
               </div>
-              <TeamBadge badge={match.teams!.away!.badge} name={match.teams!.away!.name} size={40} />
+              <TeamBadge badge={match.teams!.away!.badge} name={match.teams!.away!.name} size={Math.min(56, Math.max(40, window.innerWidth / 50))} />
             </>
           ) : (
             <div style={{ flex: 1 }}>
@@ -185,10 +185,10 @@ export default function Watch() {
         </div>
 
         {/* Two-column: player left, stream list right */}
-        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'clamp(10px, 1.2vw, 24px)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
           {/* Player column */}
-          <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ flex: '1 1 clamp(300px, 60vw, 900px)', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'clamp(8px, 1vw, 16px)' }}>
 
             {/* Player box */}
             <div
@@ -335,7 +335,7 @@ export default function Watch() {
           </div>
 
           {/* Right sidebar: stream list (desktop) */}
-          <div className="hide-below-md" style={{ width: 280, flexShrink: 0 }}>
+          <div className="hide-below-md" style={{ width: 'clamp(240px, 20vw, 400px)', flexShrink: 0 }}>
             <StreamSidebar streams={streams} activeStream={activeStream} onSwitch={switchStream} loading={loadingStreams} />
           </div>
         </div>
@@ -353,6 +353,23 @@ export default function Watch() {
           .hide-below-md { display: none !important; }
           .show-below-md { display: block !important; }
         }
+        @media (min-width: 769px) {
+          .show-below-md { display: none !important; }
+        }
+        @media (min-width: 1600px) {
+          .stream-btn-label { font-size: 0.95rem !important; }
+          .stream-btn-sub { font-size: 0.82rem !important; }
+        }
+        @media (min-width: 2560px) {
+          .stream-btn-label { font-size: 1.1rem !important; }
+          .stream-btn-sub { font-size: 0.95rem !important; }
+          .stream-num-badge { width: 36px !important; height: 36px !important; font-size: 0.9rem !important; }
+        }
+        @media (min-width: 3840px) {
+          .stream-btn-label { font-size: 1.35rem !important; }
+          .stream-btn-sub { font-size: 1.1rem !important; }
+          .stream-num-badge { width: 44px !important; height: 44px !important; font-size: 1.1rem !important; }
+        }
       `}</style>
     </div>
   );
@@ -364,8 +381,8 @@ function TopBar({ onBack }: { onBack: () => void }) {
   const nav = useNavigate();
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 10,
-      padding: '0 16px', height: 'var(--header-h)',
+      display: 'flex', alignItems: 'center', gap: 'clamp(8px, 1vw, 18px)',
+      padding: '0 clamp(12px, 2vw, 40px)', height: 'var(--header-h)',
       background: 'rgba(8,11,16,0.95)', backdropFilter: 'blur(20px)',
       borderBottom: '1px solid var(--border)',
       position: 'sticky', top: 0, zIndex: 100, flexShrink: 0,
@@ -388,7 +405,7 @@ function TopBar({ onBack }: { onBack: () => void }) {
         <div style={{ background: 'var(--accent)', borderRadius: 7, padding: '5px', display: 'flex' }}>
           <Tv2 size={15} color="#fff" />
         </div>
-        <span style={{ fontFamily: 'Bebas Neue', fontSize: '1.3rem', letterSpacing: '0.08em', color: 'var(--text)' }}>
+        <span style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.2rem, 1.8vw, 2.2rem)', letterSpacing: '0.08em', color: 'var(--text)' }}>
           STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
         </span>
       </button>
@@ -484,7 +501,7 @@ function StreamSidebar({ streams, activeStream, onSwitch, loading }: {
       <div style={{ padding: '12px 14px 8px', fontSize: '0.68rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>
         {streams.length} Stream{streams.length !== 1 ? 's' : ''} Available
       </div>
-      <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+      <div style={{ maxHeight: 'clamp(320px, 55vh, 700px)', overflowY: 'auto' }}>
         {streams.map((s, i) => {
           const isActive = activeStream?.embedUrl === s.embedUrl;
           return (

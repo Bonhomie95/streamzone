@@ -203,7 +203,7 @@ export default function MovieWatch() {
         <AdBanner size="leaderboard" />
       </div>
 
-      <div style={{ maxWidth: 1400, width: '100%', margin: '0 auto', padding: '14px 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ maxWidth: 'min(1600px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(24px, 3vw, 56px)', display: 'flex', flexDirection: 'column', gap: 'clamp(12px, 1.5vw, 24px)' }}>
 
         {/* ── Resume banner ── */}
         {showResumeBanner && (
@@ -393,10 +393,10 @@ export default function MovieWatch() {
         )}
 
         {/* ── Player + Source sidebar ── */}
-        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'clamp(10px, 1.2vw, 24px)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
 
           {/* Player */}
-          <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ flex: '1 1 clamp(300px, 60vw, 900px)', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div id="movie-player" style={{
               position: 'relative', background: '#000',
               borderRadius: isFullscreen ? 0 : 'var(--radius)',
@@ -514,7 +514,7 @@ export default function MovieWatch() {
           </div>
 
           {/* Source sidebar — desktop */}
-          <div className="desktop-only" style={{ width: 260, flexShrink: 0 }}>
+          <div className="desktop-only" style={{ width: 'clamp(240px, 20vw, 400px)', flexShrink: 0 }}>
             <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
               <div style={{ padding: '11px 14px 7px', fontSize: '0.66rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>
                 Stream Sources
@@ -589,8 +589,8 @@ function WatchTopBar() {
   const navigate = useNavigate();
   return (
     <div className="watch-topbar" style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '0 16px', height: 'var(--header-h)',
+      display: 'flex', alignItems: 'center', gap: 'clamp(8px, 1vw, 18px)',
+      padding: '0 clamp(12px, 2vw, 40px)', height: 'var(--header-h)',
       background: 'rgba(8,10,15,0.96)', backdropFilter: 'blur(20px)',
       borderBottom: '1px solid var(--border)',
       position: 'sticky', top: 0, zIndex: 100,
@@ -606,7 +606,7 @@ function WatchTopBar() {
         <div style={{ background: 'var(--accent)', borderRadius: 7, padding: 5, display: 'flex' }}>
           <Tv2 size={15} color="#fff" />
         </div>
-        <span style={{ fontFamily: 'Bebas Neue', fontSize: '1.3rem', letterSpacing: '0.08em', color: 'var(--text)' }}>
+        <span style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.2rem, 1.8vw, 2.2rem)', letterSpacing: '0.08em', color: 'var(--text)' }}>
           STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
         </span>
       </button>
