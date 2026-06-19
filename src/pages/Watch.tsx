@@ -17,7 +17,8 @@ function formatDate(ms: number) {
 }
 
 export default function Watch() {
-  const { matchId } = useParams<{ matchId: string }>();
+  const { matchId: rawMatchId } = useParams<{ matchId: string }>();
+  const matchId = rawMatchId ? decodeURIComponent(rawMatchId) : undefined;
   const navigate = useNavigate();
 
   const [match, setMatch] = useState<EnrichedMatch | null>(null);
@@ -183,7 +184,7 @@ export default function Watch() {
 
         {/* Viewer count badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <ViewerBadge id={matchId ?? ''} active={!!activeStream} large />
+          <ViewerBadge id={matchId?.startsWith('daddy_') ? 'live' : (matchId ?? '')} active={!!activeStream} large />
           {match.status === 'live' && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,

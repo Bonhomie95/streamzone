@@ -58,7 +58,7 @@ export default function Home() {
 
   function handleMatchClick(match: EnrichedMatch) {
     sessionStorage.setItem(`match_${match.id}`, JSON.stringify(match));
-    navigate(`/watch/${match.id}`);
+    navigate(`/watch/${encodeURIComponent(match.id)}`);
   }
 
   const filteredMatches = useMemo(() => {

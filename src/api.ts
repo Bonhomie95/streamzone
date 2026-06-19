@@ -28,8 +28,9 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
             away: { name: title.slice(vsIdx + 4).trim(), badge: '' },
           } : undefined;
 
-          // Use channel_id as unique key — stable per event
-          const id = `daddy_${ev.channels[0]?.channel_id ?? ev.event}`;
+          // Use channel_id as unique key — encode slashes so they don't break /watch/:matchId routing
+          const rawId = ev.channels[0]?.channel_id ?? ev.event;
+          const id = `daddy_${encodeURIComponent(rawId)}`;
 
           matches.push({
             id,
