@@ -4,7 +4,7 @@ import {
   ArrowLeft, Wifi, WifiOff, Maximize2, Minimize2,
   ExternalLink, Star, Clock, ChevronDown, ChevronUp, Tv2, Trophy, Film
 } from 'lucide-react';
-import { fetchStreams, fetchAllMatches, badgeUrl, getDaddyStreams } from '../api';
+import { fetchStreams, fetchAllMatches, badgeUrl, getDaddyStreams, fetchDaddyEvents } from '../api';
 import ViewerBadge from '../components/ViewerBadge';
 import AdBanner from '../components/AdBanner';
 import type { EnrichedMatch, Stream } from '../types';
@@ -36,19 +36,39 @@ export default function Watch() {
   // Load match
   useEffect(() => {
     async function load() {
-      // Try session cache first
+      if (!matchId) { setLoadingMatch(false); return; }
+
+      // 1. Try sessionStorage (same tab navigation — fastest)
       const cached = sessionStorage.getItem(`match_${matchId}`);
       if (cached) {
-        setMatch(JSON.parse(cached));
-        setLoadingMatch(false);
-        return;
+        try { setMatch(JSON.parse(cached)); setLoadingMatch(false); return; } catch { /* corrupt, continue */ }
       }
-      // Fallback: fetch all and find
+
+      // 2. Try localStorage (persists across tabs/TV browser sessions)
+      const lsCached = localStorage.getItem(`match_${matchId}`);
+      if (lsCached) {
+        try {
+          const parsed = JSON.parse(lsCached);
+          setMatch(parsed);
+          setLoadingMatch(false);
+          return;
+        } catch { /* corrupt, continue */ }
+      }
+
+      // 3. Fetch both sources in parallel and search both
       try {
-        const all = await fetchAllMatches();
-        const found = all.find(m => m.id === matchId);
-        if (found) setMatch(found);
+        const isDaddy = matchId.startsWith('daddy_');
+        if (isDaddy) {
+          const all = await fetchDaddyEvents();
+          const found = all.find(m => m.id === matchId);
+          if (found) { setMatch(found); setLoadingMatch(false); return; }
+        } else {
+          const all = await fetchAllMatches();
+          const found = all.find(m => m.id === matchId);
+          if (found) { setMatch(found); setLoadingMatch(false); return; }
+        }
       } catch { /* noop */ }
+
       setLoadingMatch(false);
     }
     load();

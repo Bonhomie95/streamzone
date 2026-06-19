@@ -57,7 +57,10 @@ export default function Home() {
   }
 
   function handleMatchClick(match: EnrichedMatch) {
-    sessionStorage.setItem(`match_${match.id}`, JSON.stringify(match));
+    const key = `match_${match.id}`;
+    const value = JSON.stringify(match);
+    sessionStorage.setItem(key, value);
+    try { localStorage.setItem(key, value); } catch { /* storage full, skip */ }
     navigate(`/watch/${encodeURIComponent(match.id)}`);
   }
 
