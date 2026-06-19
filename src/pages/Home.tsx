@@ -7,7 +7,7 @@ import StatusTabs from '../components/StatusTabs';
 import MatchGrid from '../components/MatchGrid';
 import AdBanner from '../components/AdBanner';
 import AdPopup from '../components/AdPopup';
-import { fetchSports, fetchAllMatches, fetchMatchesBySport } from '../api';
+import { fetchSports, fetchAllMatches, fetchMatchesBySport, fetchDaddyEvents } from '../api';
 import type { Sport, EnrichedMatch } from '../types';
 import type { StatusFilter } from '../components/StatusTabs';
 
@@ -31,8 +31,14 @@ export default function Home() {
   async function loadMatches(sport: string) {
     setLoading(true);
     try {
-      const data = sport === 'all' ? await fetchAllMatches() : await fetchMatchesBySport(sport);
-      setMatches(data);
+      const [streamed, daddy] = await Promise.all([
+        sport === 'all' ? fetchAllMatches() : fetchMatchesBySport(sport),
+        sport === 'all' ? fetchDaddyEvents() : Promise.resolve([]),
+      ]);
+      // Merge: dedupe by title similarity to avoid duplicate events
+      const streamedTitles = new Set(streamed.map(m => m.title.toLowerCase()));
+      const uniqueDaddy = daddy.filter(d => !streamedTitles.has(d.title.toLowerCase()));
+      setMatches([...streamed, ...uniqueDaddy]);
     } catch { /* noop */ }
     setLoading(false);
   }

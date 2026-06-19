@@ -3,6 +3,66 @@ import type { EnrichedMatch, Stream, Sport, Movie, Genre, MediaType } from './ty
 // ─── Sports API (streamed.pk) ─────────────────────────────────────
 const SPORTS_BASE = 'https://streamed.pk/api';
 
+// ─── DaddyLive API ────────────────────────────────────────────────
+const DADDY_BASE = 'https://daddylive.eu';
+
+export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
+  try {
+    const res = await fetch(`${DADDY_BASE}/api/events`);
+    const days: Array<{ day: string; categories: Record<string, Array<{
+      time: string; event: string; channels: Array<{ channel_name: string; channel_id: string; url: string }>; source: string;
+    }>> }> = await res.json();
+
+    const matches: EnrichedMatch[] = [];
+    for (const day of days) {
+      for (const [category, events] of Object.entries(day.categories)) {
+        for (const ev of events) {
+          const isLive = ev.time?.toLowerCase() === 'live';
+          // Parse "Sport : Team A vs Team B" title format
+          const colonIdx = ev.event.indexOf(':');
+          const sport = colonIdx > -1 ? ev.event.slice(0, colonIdx).trim() : category;
+          const title = colonIdx > -1 ? ev.event.slice(colonIdx + 1).trim() : ev.event;
+          const vsIdx = title.toLowerCase().indexOf(' vs ');
+          const teams = vsIdx > -1 ? {
+            home: { name: title.slice(0, vsIdx).trim(), badge: '' },
+            away: { name: title.slice(vsIdx + 4).trim(), badge: '' },
+          } : undefined;
+
+          // Use channel_id as unique key — stable per event
+          const id = `daddy_${ev.channels[0]?.channel_id ?? ev.event}`;
+
+          matches.push({
+            id,
+            title: ev.event,
+            category: sport.toLowerCase(),
+            date: isLive ? Date.now() - 1 : Date.now() + 3600_000,
+            popular: false,
+            teams,
+            sources: ev.channels.map(ch => ({ source: 'daddy', id: ch.channel_id })),
+            status: isLive ? 'live' : 'upcoming',
+            // Store embed URLs directly on the match for quick access
+            _daddyUrls: ev.channels.map(ch => ch.url),
+          } as EnrichedMatch & { _daddyUrls: string[] });
+        }
+      }
+    }
+    return matches;
+  } catch { return []; }
+}
+
+// Returns Stream[] for a daddy match — URLs already known, no extra fetch needed
+export function getDaddyStreams(match: EnrichedMatch): Stream[] {
+  const urls: string[] = (match as any)._daddyUrls ?? [];
+  return urls.map((url, i) => ({
+    id: `daddy_${i}`,
+    streamNo: i + 1,
+    language: 'en',
+    hd: true,
+    embedUrl: url,
+    source: 'DaddyLive',
+  }));
+}
+
 function getMatchStatus(dateMs: number): 'live' | 'upcoming' | 'finished' {
   const now = Date.now();
   const diff = dateMs - now;

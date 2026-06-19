@@ -4,7 +4,7 @@ import {
   ArrowLeft, Wifi, WifiOff, Maximize2, Minimize2,
   ExternalLink, Star, Clock, ChevronDown, ChevronUp, Tv2, Trophy, Film
 } from 'lucide-react';
-import { fetchStreams, fetchAllMatches, badgeUrl } from '../api';
+import { fetchStreams, fetchAllMatches, badgeUrl, getDaddyStreams } from '../api';
 import ViewerBadge from '../components/ViewerBadge';
 import AdBanner from '../components/AdBanner';
 import type { EnrichedMatch, Stream } from '../types';
@@ -65,6 +65,16 @@ export default function Watch() {
     setActiveStream(null);
     setIframeError(false);
     setIframeLoaded(false);
+
+    // DaddyLive matches have URLs already embedded — no extra fetch needed
+    if (m.id.startsWith('daddy_')) {
+      const s = getDaddyStreams(m);
+      setStreams(s);
+      if (s.length > 0) setActiveStream(s[0]);
+      setLoadingStreams(false);
+      return;
+    }
+
     const all: Stream[] = [];
     for (const src of m.sources) {
       try {
