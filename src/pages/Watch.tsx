@@ -26,6 +26,7 @@ export default function Watch() {
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [iframeError, setIframeError] = useState(false);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showStreamList, setShowStreamList] = useState(true);
   const playerWrapRef = useRef<HTMLDivElement>(null);
@@ -63,6 +64,7 @@ export default function Watch() {
     setStreams([]);
     setActiveStream(null);
     setIframeError(false);
+    setIframeLoaded(false);
     const all: Stream[] = [];
     for (const src of m.sources) {
       try {
@@ -79,6 +81,7 @@ export default function Watch() {
   function switchStream(s: Stream) {
     setActiveStream(s);
     setIframeError(false);
+    setIframeLoaded(false);
   }
 
   function toggleFullscreen() {
@@ -250,15 +253,53 @@ export default function Watch() {
                   </div>
                 </div>
               ) : activeStream ? (
-                <iframe
-                  key={activeStream.embedUrl}
-                  ref={iframeRef}
-                  src={activeStream.embedUrl}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
-                  allowFullScreen
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                  onError={() => setIframeError(true)}
-                />
+                <>
+                  <iframe
+                    key={activeStream.embedUrl}
+                    ref={iframeRef}
+                    src={activeStream.embedUrl}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
+                    allowFullScreen
+                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                    onLoad={() => setIframeLoaded(true)}
+                    onError={() => setIframeError(true)}
+                  />
+                  {/* Dark-screen fallback: shown after iframe loads but stream may be blocked */}
+                  {iframeLoaded && (
+                    <div style={{
+                      position: 'absolute', bottom: 'clamp(10px, 2vw, 20px)', left: '50%',
+                      transform: 'translateX(-50%)',
+                      background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 10, padding: 'clamp(8px, 1vw, 14px) clamp(12px, 1.5vw, 20px)',
+                      display: 'flex', alignItems: 'center', gap: 'clamp(8px, 1vw, 14px)',
+                      zIndex: 3, whiteSpace: 'nowrap',
+                    }}>
+                      <span style={{ fontSize: 'clamp(0.72rem, 0.85vw, 0.9rem)', color: 'rgba(255,255,255,0.7)' }}>
+                        Dark screen?
+                      </span>
+                      <a href={activeStream.embedUrl} target="_blank" rel="noreferrer" style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        background: 'var(--accent)', color: '#fff',
+                        borderRadius: 6, padding: 'clamp(4px, 0.5vw, 7px) clamp(10px, 1.2vw, 16px)',
+                        fontSize: 'clamp(0.72rem, 0.85vw, 0.9rem)', fontWeight: 700, textDecoration: 'none',
+                      }}>
+                        <ExternalLink size={13} />
+                        Open in new tab
+                      </a>
+                      {streams.filter(s => s.embedUrl !== activeStream.embedUrl).length > 0 && (
+                        <button onClick={() => switchStream(streams.find(s => s.embedUrl !== activeStream.embedUrl)!)} style={{
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: 6, padding: 'clamp(4px, 0.5vw, 7px) clamp(10px, 1.2vw, 16px)',
+                          fontSize: 'clamp(0.72rem, 0.85vw, 0.9rem)', color: '#fff', fontWeight: 600,
+                        }}>
+                          Try Next Source
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
               ) : null}
 
               {/* Fullscreen + direct link overlay controls */}
@@ -303,15 +344,16 @@ export default function Watch() {
                   <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
                     {streams.indexOf(activeStream) + 1} of {streams.length}
                   </span>
-                  {iframeError && activeStream && (
-                    <a href={activeStream.embedUrl} target="_blank" rel="noreferrer" style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      fontSize: '0.75rem', color: 'var(--blue)', textDecoration: 'none', fontWeight: 500,
-                    }}>
-                      <ExternalLink size={11} />
-                      Open direct
-                    </a>
-                  )}
+                  <a href={activeStream.embedUrl} target="_blank" rel="noreferrer" style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    fontSize: 'clamp(0.72rem, 0.85vw, 0.85rem)',
+                    color: 'var(--blue)', textDecoration: 'none', fontWeight: 600,
+                    background: 'rgba(77,158,247,0.1)', border: '1px solid rgba(77,158,247,0.25)',
+                    borderRadius: 6, padding: '4px 10px',
+                  }}>
+                    <ExternalLink size={12} />
+                    Open Direct
+                  </a>
                 </div>
               </div>
             )}
