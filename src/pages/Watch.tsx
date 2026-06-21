@@ -286,8 +286,8 @@ export default function Watch() {
                   src={activeStream.embedUrl}
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
                   allowFullScreen
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                  
+                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation"
                   onError={() => setIframeError(true)}
                 />
               ) : null}
