@@ -27,7 +27,7 @@ export default function Watch() {
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [iframeError, setIframeError] = useState(false);
-  const [iframeLoaded, setIframeLoaded] = useState(false);
+
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showStreamList, setShowStreamList] = useState(true);
   const playerWrapRef = useRef<HTMLDivElement>(null);
@@ -85,7 +85,7 @@ export default function Watch() {
     setStreams([]);
     setActiveStream(null);
     setIframeError(false);
-    setIframeLoaded(false);
+    
 
     // DaddyLive matches have URLs already embedded — no extra fetch needed
     if (m.id.startsWith('daddy_')) {
@@ -107,7 +107,7 @@ export default function Watch() {
   function switchStream(s: Stream) {
     setActiveStream(s);
     setIframeError(false);
-    setIframeLoaded(false);
+    
   }
 
   function toggleFullscreen() {
@@ -287,7 +287,7 @@ export default function Watch() {
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                  onLoad={() => setIframeLoaded(true)}
+                  
                   onError={() => setIframeError(true)}
                 />
               ) : null}
