@@ -5,13 +5,25 @@ const SPORTS_BASE = 'https://streamed.pk/api';
 
 // ─── DaddyLive API ────────────────────────────────────────────────
 const DADDY_BASE = 'https://daddylive.eu';
+const API_TIMEOUT = 10_000;
+
+async function fetchJson<T>(url: string, timeout = API_TIMEOUT): Promise<T> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
   try {
-    const res = await fetch(`${DADDY_BASE}/api/events`);
-    const days: Array<{ day: string; categories: Record<string, Array<{
+    const days = await fetchJson<Array<{ day: string; categories: Record<string, Array<{
       time: string; event: string; channels: Array<{ channel_name: string; channel_id: string; url: string }>; source: string;
-    }>> }> = await res.json();
+    }>> }>>(`${DADDY_BASE}/api/events`);
 
     const matches: EnrichedMatch[] = [];
     for (const day of days) {
@@ -94,26 +106,23 @@ function normaliseMatch(m: any): EnrichedMatch {
 }
 
 export async function fetchSports(): Promise<Sport[]> {
-  const res = await fetch(`${SPORTS_BASE}/sports`);
-  return res.json();
+  try { return await fetchJson<Sport[]>(`${SPORTS_BASE}/sports`); }
+  catch { return []; }
 }
 
 export async function fetchAllMatches(): Promise<EnrichedMatch[]> {
-  const res = await fetch(`${SPORTS_BASE}/matches/all`);
-  const data = await res.json();
+  const data = await fetchJson<unknown>(`${SPORTS_BASE}/matches/all`);
   return (Array.isArray(data) ? data : []).map(normaliseMatch);
 }
 
 export async function fetchMatchesBySport(sportId: string): Promise<EnrichedMatch[]> {
-  const res = await fetch(`${SPORTS_BASE}/matches/${sportId}`);
-  const data = await res.json();
+  const data = await fetchJson<unknown>(`${SPORTS_BASE}/matches/${sportId}`);
   return (Array.isArray(data) ? data : []).map(normaliseMatch);
 }
 
 export async function fetchStreams(source: string, id: string): Promise<Stream[]> {
   try {
-    const res = await fetch(`${SPORTS_BASE}/stream/${source}/${id}`);
-    return res.json();
+    return await fetchJson<Stream[]>(`${SPORTS_BASE}/stream/${source}/${id}`, 8_000);
   } catch { return []; }
 }
 

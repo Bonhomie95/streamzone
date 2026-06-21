@@ -53,6 +53,7 @@ export default function MovieWatch() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showResumeBanner, setShowResumeBanner] = useState(false);
   const [resumeElapsed, setResumeElapsed] = useState(0);
+  const [showStreamNotice, setShowStreamNotice] = useState(false);
 
   const { elapsed, clear: clearProgress } = useWatchProgress({
     tmdbId: id,
@@ -75,6 +76,13 @@ export default function MovieWatch() {
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
+
+  useEffect(() => {
+    if (probeStatus !== 'found') return;
+    setShowStreamNotice(true);
+    const timer = window.setTimeout(() => setShowStreamNotice(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [probeStatus, activeStream?.id]);
 
   async function load() {
     setLoading(true);
@@ -193,6 +201,8 @@ export default function MovieWatch() {
   );
 
   const currentEmbedLabel = mediaType === 'tv' ? `S${selectedSeason} E${selectedEpisode}` : movie.title;
+  const runtimeSeconds = mediaType === 'movie' && movie.runtime ? movie.runtime * 60 : 0;
+  const remainingSeconds = runtimeSeconds ? Math.max(0, runtimeSeconds - elapsed) : 0;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
@@ -279,7 +289,7 @@ export default function MovieWatch() {
           </div>
         )}
 
-        {probeStatus === 'found' && activeStream && (
+        {probeStatus === 'found' && activeStream && showStreamNotice && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
             background: 'rgba(45,206,137,0.08)', border: '1px solid rgba(45,206,137,0.2)',
@@ -403,7 +413,7 @@ export default function MovieWatch() {
               border: '1px solid var(--border)',
               width: '100%',
               aspectRatio: '16/9',
-              minHeight: 'clamp(200px, calc((100vw - clamp(240px, 20vw, 400px) - clamp(80px, 8vw, 160px)) * 9 / 16), 90vh)',
+              minHeight: 'clamp(200px, 56.25vw, 90vh)',
               overflow: 'hidden',
             }}>
               {/* Probing overlay */}
@@ -466,29 +476,56 @@ export default function MovieWatch() {
             {/* Active stream info bar */}
             {activeStream && probeStatus !== 'probing' && (
               <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)', padding: '8px 14px', flexWrap: 'wrap', gap: 8,
+                borderRadius: 'var(--radius-sm)', overflow: 'hidden',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Wifi size={13} color="var(--green)" />
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{activeStream.source}</span>
-                  <span style={{ fontSize: '0.65rem', background: 'var(--gold)', color: '#000', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>HD</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>{currentEmbedLabel}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {elapsed > 10 && (
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>
-                      ⏱ {formatDuration(elapsed)}
-                    </span>
-                  )}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 14px', flexWrap: 'wrap', gap: 8,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Wifi size={13} color="var(--green)" />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{activeStream.source}</span>
+                    <span style={{ fontSize: '0.65rem', background: 'var(--gold)', color: '#000', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>HD</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>{currentEmbedLabel}</span>
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-
+                    {elapsed > 10 && (
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>
+                        {runtimeSeconds
+                          ? `${formatDuration(elapsed)} watched · ${formatDuration(remainingSeconds)} left`
+                          : `${formatDuration(elapsed)} watched`}
+                      </span>
+                    )}
                     <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
                       {streams.indexOf(activeStream) + 1} of {streams.length}
                     </span>
                   </div>
                 </div>
+                {/* Progress bar — only shown for movies with known runtime */}
+                {runtimeSeconds > 0 && elapsed > 0 && (
+                  <div style={{ height: 3, background: 'var(--border)', width: '100%' }}>
+                    <div style={{
+                      height: '100%',
+                      background: 'var(--accent)',
+                      width: `${Math.min(100, (elapsed / runtimeSeconds) * 100)}%`,
+                      transition: 'width 1s linear',
+                      borderRadius: '0 2px 2px 0',
+                    }} />
+                  </div>
+                )}
+                {/* Elapsed-only bar for TV shows or when runtime unknown */}
+                {runtimeSeconds === 0 && elapsed > 30 && (
+                  <div style={{ height: 3, background: 'var(--border)', width: '100%' }}>
+                    <div style={{
+                      height: '100%',
+                      background: 'var(--accent)',
+                      width: `${Math.min(100, (elapsed / 7200) * 100)}%`, // normalise to 2h default
+                      transition: 'width 1s linear',
+                      borderRadius: '0 2px 2px 0',
+                    }} />
+                  </div>
+                )}
               </div>
             )}
 

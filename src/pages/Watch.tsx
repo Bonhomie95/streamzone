@@ -96,13 +96,8 @@ export default function Watch() {
       return;
     }
 
-    const all: Stream[] = [];
-    for (const src of m.sources) {
-      try {
-        const s = await fetchStreams(src.source, src.id);
-        all.push(...s);
-      } catch { /* skip */ }
-    }
+    const batches = await Promise.all(m.sources.map(src => fetchStreams(src.source, src.id)));
+    const all = batches.flat();
     setStreams(all);
     if (all.length > 0) setActiveStream(all[0]);
     setLoadingStreams(false);
@@ -171,13 +166,13 @@ export default function Watch() {
       </div>
 
       {/* Main layout: player area + stream sidebar */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: 'min(2400px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(16px, 2.5vw, 48px)', gap: 'clamp(12px, 1.5vw, 24px)' }}>
+      <div className="watch-outer-pad" style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: 'min(2400px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(8px, 1.5vw, 28px) clamp(8px, 2vw, 36px) clamp(16px, 2.5vw, 48px)', gap: 'clamp(10px, 1.5vw, 24px)' }}>
 
         {/* Match title row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div className="watch-title-row" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           {hasTeams ? (
             <>
-              <TeamBadge badge={match.teams!.home!.badge} name={match.teams!.home!.name} size={Math.min(56, Math.max(40, window.innerWidth / 50))} />
+              <TeamBadge badge={match.teams!.home!.badge} name={match.teams!.home!.name} size={48} />
               <div style={{ textAlign: 'center', flex: 1, minWidth: 120 }}>
                 <div style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.1rem, 3vw, 1.8rem)', letterSpacing: '0.06em', lineHeight: 1 }}>
                   {match.teams!.home!.name} <span style={{ color: 'var(--text3)' }}>vs</span> {match.teams!.away!.name}
@@ -189,7 +184,7 @@ export default function Watch() {
                   {!isLive && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.72rem', color: 'var(--text3)' }}><Clock size={11} />{formatDate(match.date)}</span>}
                 </div>
               </div>
-              <TeamBadge badge={match.teams!.away!.badge} name={match.teams!.away!.name} size={Math.min(56, Math.max(40, window.innerWidth / 50))} />
+              <TeamBadge badge={match.teams!.away!.badge} name={match.teams!.away!.name} size={48} />
             </>
           ) : (
             <div style={{ flex: 1 }}>
@@ -203,7 +198,7 @@ export default function Watch() {
         </div>
 
         {/* Viewer count badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div className="watch-viewer-row" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <ViewerBadge id={matchId?.startsWith('daddy_') ? 'live' : (matchId ?? '')} active={!!activeStream} large />
           {match.status === 'live' && (
             <span style={{
@@ -226,6 +221,7 @@ export default function Watch() {
 
             {/* Player box */}
             <div
+              className="watch-player-col"
               ref={playerWrapRef}
               style={{
                 position: 'relative',
@@ -235,8 +231,8 @@ export default function Watch() {
                 border: isFullscreen ? 'none' : '1px solid var(--border)',
                 width: '100%',
                 aspectRatio: '16/9',
-                /* Fallback height if aspectRatio fails to resolve (e.g. flex width not computed) */
-                minHeight: 'clamp(200px, calc((100vw - clamp(240px, 20vw, 400px) - clamp(80px, 8vw, 160px)) * 9 / 16), 90vh)',
+                /* Safe fallback — avoids collapsing on TVs where sidebar widths are unpredictable */
+                minHeight: 'clamp(200px, 56.25vw, 90vh)',
               }}
             >
               {loadingStreams ? (
@@ -284,53 +280,16 @@ export default function Watch() {
                   </div>
                 </div>
               ) : activeStream ? (
-                <>
-                  <iframe
-                    key={activeStream.embedUrl}
-                    ref={iframeRef}
-                    src={activeStream.embedUrl}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
-                    allowFullScreen
-                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                    onLoad={() => setIframeLoaded(true)}
-                    onError={() => setIframeError(true)}
-                  />
-                  {/* Dark-screen fallback: shown after iframe loads but stream may be blocked */}
-                  {iframeLoaded && (
-                    <div style={{
-                      position: 'absolute', bottom: 'clamp(10px, 2vw, 20px)', left: '50%',
-                      transform: 'translateX(-50%)',
-                      background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: 10, padding: 'clamp(8px, 1vw, 14px) clamp(12px, 1.5vw, 20px)',
-                      display: 'flex', alignItems: 'center', gap: 'clamp(8px, 1vw, 14px)',
-                      zIndex: 3, whiteSpace: 'nowrap',
-                    }}>
-                      <span style={{ fontSize: 'clamp(0.72rem, 0.85vw, 0.9rem)', color: 'rgba(255,255,255,0.7)' }}>
-                        Dark screen?
-                      </span>
-                      <a href={activeStream.embedUrl} target="_blank" rel="noreferrer" style={{
-                        display: 'flex', alignItems: 'center', gap: 5,
-                        background: 'var(--accent)', color: '#fff',
-                        borderRadius: 6, padding: 'clamp(4px, 0.5vw, 7px) clamp(10px, 1.2vw, 16px)',
-                        fontSize: 'clamp(0.72rem, 0.85vw, 0.9rem)', fontWeight: 700, textDecoration: 'none',
-                      }}>
-                        <ExternalLink size={13} />
-                        Open in new tab
-                      </a>
-                      {streams.filter(s => s.embedUrl !== activeStream.embedUrl).length > 0 && (
-                        <button onClick={() => switchStream(streams.find(s => s.embedUrl !== activeStream.embedUrl)!)} style={{
-                          display: 'flex', alignItems: 'center', gap: 5,
-                          background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
-                          borderRadius: 6, padding: 'clamp(4px, 0.5vw, 7px) clamp(10px, 1.2vw, 16px)',
-                          fontSize: 'clamp(0.72rem, 0.85vw, 0.9rem)', color: '#fff', fontWeight: 600,
-                        }}>
-                          Try Next Source
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </>
+                <iframe
+                  key={activeStream.embedUrl}
+                  ref={iframeRef}
+                  src={activeStream.embedUrl}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
+                  allowFullScreen
+                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                  onLoad={() => setIframeLoaded(true)}
+                  onError={() => setIframeError(true)}
+                />
               ) : null}
 
               {/* Fullscreen + direct link overlay controls */}
@@ -352,7 +311,7 @@ export default function Watch() {
 
             {/* Active stream info bar */}
             {activeStream && (
-              <div style={{
+              <div className="watch-infobar" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 background: 'var(--surface)', border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-sm)', padding: '8px 14px',
@@ -363,7 +322,6 @@ export default function Watch() {
                   <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
                     {activeStream.source} · Stream #{activeStream.streamNo}
                   </span>
-
                   {activeStream.hd && (
                     <span style={{ fontSize: '0.62rem', background: 'var(--gold)', color: '#000', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>HD</span>
                   )}
@@ -371,27 +329,15 @@ export default function Watch() {
                     <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>{activeStream.language}</span>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
-                    {streams.indexOf(activeStream) + 1} of {streams.length}
-                  </span>
-                  <a href={activeStream.embedUrl} target="_blank" rel="noreferrer" style={{
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    fontSize: 'clamp(0.72rem, 0.85vw, 0.85rem)',
-                    color: 'var(--blue)', textDecoration: 'none', fontWeight: 600,
-                    background: 'rgba(77,158,247,0.1)', border: '1px solid rgba(77,158,247,0.25)',
-                    borderRadius: 6, padding: '4px 10px',
-                  }}>
-                    <ExternalLink size={12} />
-                    Open Direct
-                  </a>
-                </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
+                  {streams.indexOf(activeStream) + 1} of {streams.length}
+                </span>
               </div>
             )}
 
             {/* Mobile: collapsible stream list below player */}
             <div className="show-below-md" style={{ display: 'none' }}>
-              <button onClick={() => setShowStreamList(v => !v)} style={{
+              <button className="watch-stream-toggle" onClick={() => setShowStreamList(v => !v)} style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 background: 'var(--surface)', border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-sm)', padding: '10px 14px',
@@ -424,9 +370,39 @@ export default function Watch() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        /* Default (desktop / TV): sidebar visible, mobile strip hidden */
+        .hide-below-md { display: block; }
+        .show-below-md { display: none !important; }
         @media (max-width: 768px) {
           .hide-below-md { display: none !important; }
           .show-below-md { display: block !important; }
+          /* Edge-to-edge player on mobile */
+          .watch-outer-pad {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            padding-top: 0 !important;
+          }
+          .watch-player-col {
+            border-radius: 0 !important;
+          }
+          /* Compact match title on mobile */
+          .watch-title-row {
+            gap: 8px !important;
+            padding: 8px 12px 0 !important;
+          }
+          .watch-viewer-row {
+            padding: 0 12px !important;
+          }
+          .watch-infobar {
+            border-radius: 0 !important;
+            border-left: none !important;
+            border-right: none !important;
+          }
+          .watch-stream-toggle {
+            border-radius: 0 !important;
+            border-left: none !important;
+            border-right: none !important;
+          }
         }
         @media (min-width: 769px) {
           .show-below-md { display: none !important; }
@@ -515,10 +491,11 @@ function TopBar({ onBack }: { onBack: () => void }) {
 function TeamBadge({ badge, name, size }: { badge: string; name: string; size: number }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 60 }}>
-      <img src={badgeUrl(badge)} alt={name} width={size} height={size}
-        style={{ objectFit: 'contain' }}
+      <img src={badgeUrl(badge)} alt={name}
+        width={size} height={size}
+        style={{ objectFit: 'contain', width: 'clamp(40px, 4vw, 72px)', height: 'clamp(40px, 4vw, 72px)' }}
         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-      <span style={{ fontSize: '0.72rem', fontWeight: 600, textAlign: 'center', color: 'var(--text2)', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      <span style={{ fontSize: 'clamp(0.68rem, 0.9vw, 1rem)', fontWeight: 600, textAlign: 'center', color: 'var(--text2)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
     </div>
   );
 }

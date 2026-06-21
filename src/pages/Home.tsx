@@ -24,23 +24,23 @@ export default function Home() {
   useEffect(() => { init(); }, []);
 
   async function init() {
-    const [sportsData] = await Promise.all([fetchSports(), loadMatches('all')]);
-    setSports(sportsData);
+    fetchSports().then(setSports);
+    await loadMatches('all');
   }
 
   async function loadMatches(sport: string) {
     setLoading(true);
-    try {
-      const [streamed, daddy] = await Promise.all([
-        sport === 'all' ? fetchAllMatches() : fetchMatchesBySport(sport),
-        sport === 'all' ? fetchDaddyEvents() : Promise.resolve([]),
-      ]);
-      // Merge: dedupe by title similarity to avoid duplicate events
-      const streamedTitles = new Set(streamed.map(m => m.title.toLowerCase()));
-      const uniqueDaddy = daddy.filter(d => !streamedTitles.has(d.title.toLowerCase()));
-      setMatches([...streamed, ...uniqueDaddy]);
-    } catch { /* noop */ }
+    const streamed = await (sport === 'all' ? fetchAllMatches() : fetchMatchesBySport(sport)).catch(() => []);
+    setMatches(streamed);
     setLoading(false);
+
+    if (sport !== 'all') return;
+    const daddy = await fetchDaddyEvents();
+    setMatches(current => {
+      const titles = new Set(current.map(m => m.title.toLowerCase()));
+      const uniqueDaddy = daddy.filter(d => !titles.has(d.title.toLowerCase()));
+      return [...current, ...uniqueDaddy];
+    });
   }
 
   async function handleSportSelect(sport: string) {
