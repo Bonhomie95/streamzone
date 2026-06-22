@@ -280,16 +280,15 @@ export default function Watch() {
                   </div>
                 </div>
               ) : activeStream ? (
-                <iframe
-                  key={activeStream.embedUrl}
-                  ref={iframeRef}
-                  src={activeStream.embedUrl}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
-                  allowFullScreen
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation"
-                  onError={() => setIframeError(true)}
-                />
+             <iframe
+  key={activeStream.embedUrl}
+  ref={iframeRef}
+  src={activeStream.embedUrl}
+  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
+  allowFullScreen
+  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+  onError={() => setIframeError(true)}
+/>
               ) : null}
 
               {/* Fullscreen + direct link overlay controls */}
