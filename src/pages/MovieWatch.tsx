@@ -14,8 +14,15 @@ import type { Movie, MediaType, Stream } from '../types';
 type ProbeStatus = 'idle' | 'probing' | 'found' | 'all_failed';
 
 // Probe a URL by fetching it with no-cors — if it resolves (even opaque) the domain is alive
-// If DNS fails or connection refused, it throws
+// Smart TV browsers (Tizen, webOS, Android TV) block no-cors cross-origin fetches and throw
+// a security/sandbox error that breaks the whole player. Skip probing on TVs and assume alive.
+function isTVBrowser(): boolean {
+  const ua = navigator.userAgent.toLowerCase();
+  return /tizen|webos|smart-tv|netcast|nettv|hbbtv|androidtv|crkey|googletv|viera|bravia|roku/.test(ua);
+}
+
 async function probeUrl(url: string): Promise<boolean> {
+  if (isTVBrowser()) return true; // TV browsers can't do no-cors probes safely
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
@@ -456,7 +463,6 @@ export default function MovieWatch() {
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation"
                   onError={() => setIframeError(true)}
                 />
               ) : null}
