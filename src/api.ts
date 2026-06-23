@@ -197,14 +197,10 @@ export function backdropImg(path: string, size = "w1280") {
   return path ? `${IMG_BASE}/${size}${path}` : "";
 }
 
-// Route embed URLs through the server proxy to strip X-Frame-Options / CSP frame-ancestors.
-// This is required for Smart TV browsers (Tizen, webOS, Android TV) which enforce framing
-// headers strictly — desktop browsers silently ignore them for HTTPS iframes, TVs do not.
-function proxyEmbed(url: string): string {
-  return `/embed-proxy?url=${encodeURIComponent(url)}`;
-}
-
-// VidSrc embed URLs — tried in order as fallback sources
+// Embed sources — updated June 2026
+// vidsrc.to, vidsrc.me, autoembed.co, vidlink.pro, 2embed.cc, multiembed.mov
+// are all dead (DNS gone) or returning hard 403s as of this update.
+// Sources below are ordered by TV-browser compatibility and uptime reliability.
 export function getEmbedSources(
   tmdbId: number,
   type: MediaType,
@@ -213,61 +209,55 @@ export function getEmbedSources(
 ): Stream[] {
   const isTV = type === "tv" && season !== undefined && episode !== undefined;
 
-  // Sources ordered by reliability — if one fails in the UI, user picks the next
-  // All confirmed working in browser iframes as of 2025 (block server-to-server but allow browser)
   const sources = [
-    // vidsrc.to — most reliable, consistent uptime
-    {
-      name: "VidSrc",
-      url: proxyEmbed(
-        isTV
-          ? `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`
-          : `https://vidsrc.to/embed/movie/${tmdbId}`,
-      ),
-    },
-    // vidsrc.me — solid backup
-    {
-      name: "VidSrc.me",
-      url: proxyEmbed(
-        isTV
-          ? `https://vidsrc.me/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
-          : `https://vidsrc.me/embed/movie?tmdb=${tmdbId}`,
-      ),
-    },
-    // embed.su — clean player, no redirect spam
+    // embed.su — clean player, no X-Frame-Options, works in TV WebViews
     {
       name: "Embed.su",
       url: isTV
         ? `https://embed.su/embed/tv/${tmdbId}/${season}/${episode}`
         : `https://embed.su/embed/movie/${tmdbId}`,
     },
-    // autoembed.co (.co not .cc — .cc is dead)
+    // vidsrc.cc — active fork of the original vidsrc network
     {
-      name: "AutoEmbed",
+      name: "VidSrc",
       url: isTV
-        ? `https://autoembed.co/tv/tmdb/${tmdbId}-${season}-${episode}`
-        : `https://autoembed.co/movie/tmdb/${tmdbId}`,
+        ? `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidsrc.cc/v2/embed/movie/${tmdbId}`,
     },
-    // vidlink.pro — good quality, sometimes geo-restricted
+    // player.videasy.net — newer provider, broad title coverage
     {
-      name: "VidLink",
+      name: "Videasy",
       url: isTV
-        ? `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`
-        : `https://vidlink.pro/movie/${tmdbId}`,
+        ? `https://player.videasy.net/tv/${tmdbId}/${season}/${episode}`
+        : `https://player.videasy.net/movie/${tmdbId}`,
     },
-    // 2embed.cc — widely used fallback
+    // vidbinge.dev — reliable fallback, minimal ads
+    {
+      name: "VidBinge",
+      url: isTV
+        ? `https://vidbinge.dev/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidbinge.dev/embed/movie/${tmdbId}`,
+    },
+    // 2embed.skin — active replacement for dead 2embed.cc
     {
       name: "2Embed",
       url: isTV
-        ? `https://www.2embed.cc/embedtv/${tmdbId}&s=${season}&e=${episode}`
-        : `https://www.2embed.cc/embed/${tmdbId}`,
+        ? `https://www.2embed.skin/embedtv/${tmdbId}&s=${season}&e=${episode}`
+        : `https://www.2embed.skin/embed/${tmdbId}`,
     },
-    // superembed / multiembed — last resort, has a popup ad but works
+    // moviesapi.club — good uptime, clean player
     {
-      name: "SuperEmbed",
+      name: "MoviesAPI",
       url: isTV
-        ? `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${season}&e=${episode}`
-        : `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`,
+        ? `https://moviesapi.club/tv/${tmdbId}-${season}-${episode}`
+        : `https://moviesapi.club/movie/${tmdbId}`,
+    },
+    // autoembed.cc — rebranded/active version of autoembed
+    {
+      name: "AutoEmbed",
+      url: isTV
+        ? `https://player.autoembed.cc/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://player.autoembed.cc/embed/movie/${tmdbId}`,
     },
   ];
 
