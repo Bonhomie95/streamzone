@@ -58,8 +58,17 @@ app.use(express.json());
 // Railway: add a Redis service, it auto-sets REDIS_URL env var
 // Without Redis, counts are in-memory (reset on redeploy, still works)
 
-const BASE_OFFSET = 10000; // social proof baseline
-const memStore = {}; // in-memory fallback
+// Each content ID gets a random baseline between 6000–50000 on first access,
+// so counts look organic rather than all starting from the same number.
+const memStore = {};    // { id: number }  — raw increment count
+const baseStore = {};   // { id: number }  — per-ID random baseline
+
+function getBase(id) {
+  if (!baseStore[id]) {
+    baseStore[id] = Math.floor(Math.random() * 44_000) + 6_000; // 6k–50k
+  }
+  return baseStore[id];
+}
 
 let redis = null;
 try {
@@ -84,30 +93,54 @@ try {
 async function incrementView(id) {
   if (redis) {
     const val = await redis.incr(`sz:views:${id}`);
-    return val + BASE_OFFSET;
+    // Store base in Redis too so it survives restarts
+    let base = parseInt(await redis.get(`sz:base:${id}`));
+    if (!base) {
+      base = Math.floor(Math.random() * 44_000) + 6_000;
+      await redis.set(`sz:base:${id}`, base);
+    }
+    return val + base;
   }
   memStore[id] = (memStore[id] || 0) + 1;
-  return memStore[id] + BASE_OFFSET;
+  return memStore[id] + getBase(id);
 }
 
 async function getView(id) {
   if (redis) {
-    const val = await redis.get(`sz:views:${id}`);
-    return (parseInt(val) || 0) + BASE_OFFSET;
+    const [val, base] = await Promise.all([
+      redis.get(`sz:views:${id}`),
+      redis.get(`sz:base:${id}`),
+    ]);
+    const b = parseInt(base) || Math.floor(Math.random() * 44_000) + 6_000;
+    if (!base) await redis.set(`sz:base:${id}`, b);
+    return (parseInt(val) || 0) + b;
   }
-  return (memStore[id] || 0) + BASE_OFFSET;
+  return (memStore[id] || 0) + getBase(id);
 }
 
 async function getBulkViews(ids) {
   if (redis && ids.length > 0) {
-    const keys = ids.map((id) => `sz:views:${id}`);
-    const vals = await redis.mget(...keys);
+    const viewKeys = ids.map((id) => `sz:views:${id}`);
+    const baseKeys = ids.map((id) => `sz:base:${id}`);
+    const [vals, bases] = await Promise.all([
+      redis.mget(...viewKeys),
+      redis.mget(...baseKeys),
+    ]);
+    // Assign missing bases and persist them
+    const pipeline = redis.pipeline();
+    const resolvedBases = bases.map((b, i) => {
+      if (b) return parseInt(b);
+      const newBase = Math.floor(Math.random() * 44_000) + 6_000;
+      pipeline.set(baseKeys[i], newBase);
+      return newBase;
+    });
+    await pipeline.exec();
     return Object.fromEntries(
-      ids.map((id, i) => [id, (parseInt(vals[i]) || 0) + BASE_OFFSET]),
+      ids.map((id, i) => [id, (parseInt(vals[i]) || 0) + resolvedBases[i]]),
     );
   }
   return Object.fromEntries(
-    ids.map((id) => [id, (memStore[id] || 0) + BASE_OFFSET]),
+    ids.map((id) => [id, (memStore[id] || 0) + getBase(id)]),
   );
 }
 

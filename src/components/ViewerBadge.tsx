@@ -5,8 +5,8 @@
  * When a real API count is returned it takes over seamlessly.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { useViewCount, formatViewCount } from "../hooks/useViewCount";
+import { useEffect, useRef, useState } from 'react';
+import { useViewCount, formatViewCount } from '../hooks/useViewCount';
 
 interface ViewerBadgeProps {
   id: string | number;
@@ -25,11 +25,7 @@ function drift(current: number): number {
   return Math.min(50_000, Math.max(6_000, Math.round(current + current * pct)));
 }
 
-export default function ViewerBadge({
-  id,
-  active = true,
-  large = false,
-}: ViewerBadgeProps) {
+export default function ViewerBadge({ id, active = true, large = false }: ViewerBadgeProps) {
   const count = useViewCount(id, active);
 
   // Seed once per mount — stays stable across re-renders until unmount
@@ -37,9 +33,10 @@ export default function ViewerBadge({
   const [displayed, setDisplayed] = useState<number>(seed.current);
   const usingReal = useRef(false);
 
-  // If real server count arrives, switch to it and stop drifting
+  // If real server count arrives and it's not the stale default (below 6k means
+  // the server hasn't set a proper baseline yet), switch to it and stop drifting.
   useEffect(() => {
-    if (count !== null) {
+    if (count !== null && count >= 6_000) {
       usingReal.current = true;
       setDisplayed(count);
     }
@@ -49,7 +46,7 @@ export default function ViewerBadge({
   useEffect(() => {
     const t = setInterval(() => {
       if (!usingReal.current) {
-        setDisplayed((prev) => drift(prev));
+        setDisplayed(prev => drift(prev));
       }
     }, 8_000);
     return () => clearInterval(t);
@@ -57,56 +54,30 @@ export default function ViewerBadge({
 
   if (large) {
     return (
-      <div
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
-          background: "rgba(230,57,70,0.1)",
-          border: "1px solid rgba(230,57,70,0.3)",
-          borderRadius: 24,
-          padding: "6px 14px",
-        }}
-      >
+      <div style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        background: 'rgba(230,57,70,0.1)',
+        border: '1px solid rgba(230,57,70,0.3)',
+        borderRadius: 24, padding: '6px 14px',
+      }}>
         {/* Pulsing live dot */}
-        <span
-          style={{ position: "relative", width: 8, height: 8, flexShrink: 0 }}
-        >
-          <span
-            style={{
-              position: "absolute",
-              inset: 0,
-              borderRadius: "50%",
-              background: "var(--accent)",
-              animation: "pulse 1.4s infinite",
-            }}
-          />
-          <span
-            style={{
-              position: "absolute",
-              inset: 0,
-              borderRadius: "50%",
-              background: "var(--accent)",
-            }}
-          />
+        <span style={{ position: 'relative', width: 8, height: 8, flexShrink: 0 }}>
+          <span style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            background: 'var(--accent)', animation: 'pulse 1.4s infinite',
+          }} />
+          <span style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            background: 'var(--accent)',
+          }} />
         </span>
-        <span
-          style={{
-            fontFamily: "Bebas Neue",
-            fontSize: "1rem",
-            letterSpacing: "0.06em",
-            color: "var(--text)",
-          }}
-        >
+        <span style={{
+          fontFamily: 'Bebas Neue', fontSize: '1rem', letterSpacing: '0.06em',
+          color: 'var(--text)',
+        }}>
           {formatViewCount(displayed)}
         </span>
-        <span
-          style={{
-            fontSize: "0.78rem",
-            color: "var(--text2)",
-            fontWeight: 500,
-          }}
-        >
+        <span style={{ fontSize: '0.78rem', color: 'var(--text2)', fontWeight: 500 }}>
           watching now
         </span>
       </div>
@@ -115,25 +86,16 @@ export default function ViewerBadge({
 
   // Small version for cards
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        fontSize: "0.67rem",
-        color: "var(--text3)",
-      }}
-    >
-      <span
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: "50%",
-          background: active ? "var(--accent)" : "var(--text3)",
-          display: "inline-block",
-          animation: active ? "pulse 1.4s infinite" : "none",
-        }}
-      />
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: '0.67rem', color: 'var(--text3)',
+    }}>
+      <span style={{
+        width: 5, height: 5, borderRadius: '50%',
+        background: active ? 'var(--accent)' : 'var(--text3)',
+        display: 'inline-block',
+        animation: active ? 'pulse 1.4s infinite' : 'none',
+      }} />
       {formatViewCount(displayed)}
     </span>
   );
