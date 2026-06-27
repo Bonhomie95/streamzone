@@ -1,26 +1,55 @@
 /**
  * ViewerBadge — prominent "X,XXX watching now" badge shown above the player.
- * Shows 10,000+ immediately (before API responds) then updates with real count.
- * Pulses the dot to signal it's live data.
+ * Initial count is randomised between 6K–50K per session, then drifts ±2–8%
+ * every 8 seconds so it feels live even without a real backend count.
+ * When a real API count is returned it takes over seamlessly.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useViewCount, formatViewCount } from '../hooks/useViewCount';
 
 interface ViewerBadgeProps {
   id: string | number;
-  active?: boolean;    // only increment when stream is actually playing
-  large?: boolean;     // larger size for watch pages vs card size
+  active?: boolean;
+  large?: boolean;
+}
+
+/** Random int in [min, max] */
+function randInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/** Drift the count by ±2–8%, clamped to [6000, 50000] */
+function drift(current: number): number {
+  const pct = (Math.random() * 0.06 + 0.02) * (Math.random() < 0.5 ? 1 : -1);
+  return Math.min(50_000, Math.max(6_000, Math.round(current + current * pct)));
 }
 
 export default function ViewerBadge({ id, active = true, large = false }: ViewerBadgeProps) {
   const count = useViewCount(id, active);
-  const [displayed, setDisplayed] = useState<number>(10_000);
 
-  // As soon as we get a real count from server, use it
+  // Seed once per mount — stays stable across re-renders until unmount
+  const seed = useRef(randInt(6_000, 50_000));
+  const [displayed, setDisplayed] = useState<number>(seed.current);
+  const usingReal = useRef(false);
+
+  // If real server count arrives, switch to it and stop drifting
   useEffect(() => {
-    if (count !== null) setDisplayed(count);
+    if (count !== null) {
+      usingReal.current = true;
+      setDisplayed(count);
+    }
   }, [count]);
+
+  // Drift every 8 seconds while no real count is available
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!usingReal.current) {
+        setDisplayed(prev => drift(prev));
+      }
+    }, 8_000);
+    return () => clearInterval(t);
+  }, []);
 
   if (large) {
     return (
