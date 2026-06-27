@@ -72,18 +72,6 @@ export default function MovieWatch() {
     poster: movie?.poster,
   });
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-    load();
-  }, [tmdbId, type]);
-
-  useEffect(() => {
-    if (probeStatus !== 'found') return;
-    setShowStreamNotice(true);
-    const timer = window.setTimeout(() => setShowStreamNotice(false), 5000);
-    return () => window.clearTimeout(timer);
-  }, [probeStatus, activeStream?.id]);
-
   async function load() {
     setLoading(true);
     setProbeStatus('idle');
@@ -112,6 +100,20 @@ export default function MovieWatch() {
       setLoading(false);
     }
   }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    load();
+  }, [tmdbId, type]);
+
+  useEffect(() => {
+    if (probeStatus !== 'found') return;
+    // Use setTimeout to avoid synchronous setState inside effect body
+    const show = window.setTimeout(() => setShowStreamNotice(true), 0);
+    const hide = window.setTimeout(() => setShowStreamNotice(false), 5000);
+    return () => { window.clearTimeout(show); window.clearTimeout(hide); };
+  }, [probeStatus, activeStream?.id]);
 
   const probeAndSet = useCallback(async (srcs: Stream[]) => {
     setProbeStatus('probing');
@@ -769,15 +771,14 @@ function WatchTopBar() {
         <input
           value={query}
           onChange={e => handleSearch(e.target.value)}
-          onFocus={() => { if (results.length > 0) setShowDrop(true); }}
+          onFocus={e => { if (results.length > 0) setShowDrop(true); e.currentTarget.style.borderColor = 'var(--border2)'; }}
+          onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
           placeholder="Search movies & series…"
           style={{
             width: '100%', background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 8, padding: '7px 10px 7px 30px',
             color: 'var(--text)', fontSize: '0.8rem', outline: 'none',
           }}
-          onFocus={e => (e.currentTarget.style.borderColor = 'var(--border2)')}
-          onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
         />
         {/* Dropdown results */}
         {showDrop && (
