@@ -32,24 +32,50 @@ function effectiveSize(size: AdSize, windowWidth: number): AdSize {
 }
 
 // ─── Standard iframe banner injection ────────────────────────────
-const injectedBannerSlots = new WeakSet<HTMLDivElement>();
+// FIX: Use useEffect + useRef instead of ref callback + WeakSet.
+// React StrictMode double-invokes ref callbacks (mount→null→mount),
+// which caused the WeakSet guard to permanently block injection on
+// the second mount. useEffect fires once after the real mount.
 
-function injectBanner(container: HTMLDivElement, cfg: { key: string; width: number; height: number }) {
-  if (injectedBannerSlots.has(container)) return;
-  injectedBannerSlots.add(container);
-  container.innerHTML = '';
+function BannerAd({ cfg }: { cfg: { key: string; width: number; height: number } }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const injected = useRef(false);
 
-  const optionsScript = document.createElement('script');
-  optionsScript.type = 'text/javascript';
-  optionsScript.text = `atOptions = { 'key': '${cfg.key}', 'format': 'iframe', 'height': ${cfg.height}, 'width': ${cfg.width}, 'params': {} };`;
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || injected.current) return;
+    injected.current = true;
 
-  const invokeScript = document.createElement('script');
-  invokeScript.type = 'text/javascript';
-  invokeScript.src = `https://www.highperformanceformat.com/${cfg.key}/invoke.js`;
-  invokeScript.async = true;
+    node.innerHTML = '';
 
-  container.appendChild(optionsScript);
-  container.appendChild(invokeScript);
+    const optionsScript = document.createElement('script');
+    optionsScript.type = 'text/javascript';
+    optionsScript.text = `atOptions = { 'key': '${cfg.key}', 'format': 'iframe', 'height': ${cfg.height}, 'width': ${cfg.width}, 'params': {} };`;
+
+    const invokeScript = document.createElement('script');
+    invokeScript.type = 'text/javascript';
+    invokeScript.src = `https://www.highperformanceformat.com/${cfg.key}/invoke.js`;
+    invokeScript.async = true;
+
+    node.appendChild(optionsScript);
+    node.appendChild(invokeScript);
+  }, [cfg.key, cfg.width, cfg.height]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        width: '100%',
+        maxWidth: cfg.width,
+        minHeight: cfg.height,
+        margin: '0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    />
+  );
 }
 
 // ─── Native banner component ──────────────────────────────────────
@@ -59,7 +85,7 @@ function NativeBannerAd() {
   useEffect(() => {
     if (injected.current) return;
     if (isLocalhost() && !LOAD_REMOTE_ADS_ON_LOCALHOST) return;
-    if (document.getElementById(NATIVE_CONTAINER_ID)) return; // already in DOM
+    if (document.getElementById(NATIVE_CONTAINER_ID)) return;
 
     injected.current = true;
 
@@ -99,34 +125,34 @@ export default function AdBanner({ size = 'leaderboard', className }: AdBannerPr
   const cfg = AD_CONFIG[resolved as keyof typeof AD_CONFIG];
   const showLocalPlaceholder = isLocalhost() && !LOAD_REMOTE_ADS_ON_LOCALHOST;
 
-  return (
-    <div
-      ref={node => {
-        if (!node || showLocalPlaceholder) return;
-        injectBanner(node as HTMLDivElement, cfg);
-      }}
-      className={className}
-      style={{
-        width: '100%',
-        maxWidth: cfg.width,
-        minHeight: cfg.height,
-        margin: '0 auto',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        ...(showLocalPlaceholder ? {
+  if (showLocalPlaceholder) {
+    return (
+      <div
+        className={className}
+        style={{
+          width: '100%',
+          maxWidth: cfg.width,
+          minHeight: cfg.height,
+          margin: '0 auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
           background: 'repeating-linear-gradient(45deg, var(--surface) 0px, var(--surface) 10px, var(--surface2) 10px, var(--surface2) 20px)',
           border: '1px dashed var(--border2)',
           borderRadius: 'var(--radius-sm)',
-        } : {}),
-      }}
-    >
-      {showLocalPlaceholder && (
+        }}
+      >
         <span style={{ fontSize: '0.68rem', color: 'var(--text3)', fontWeight: 600, letterSpacing: '0.08em' }}>
           LOCAL AD SLOT · {cfg.width}×{cfg.height}
         </span>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={className}>
+      <BannerAd cfg={cfg} />
     </div>
   );
 }

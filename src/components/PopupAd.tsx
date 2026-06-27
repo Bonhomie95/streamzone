@@ -8,6 +8,10 @@ import { useEffect, useRef } from 'react';
 const POPUP_KEY = 'sz_popup_last';
 const INTERVAL_MS = 30 * 60 * 1000;
 
+function isLocalhost() {
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+}
+
 function shouldShowPopup(): boolean {
   try {
     const last = localStorage.getItem(POPUP_KEY);
@@ -27,6 +31,7 @@ export default function PopupAd() {
 
   useEffect(() => {
     if (injected.current) return;
+    if (isLocalhost()) return;
     if (!shouldShowPopup()) return;
 
     injected.current = true;
