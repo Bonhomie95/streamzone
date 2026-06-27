@@ -1,24 +1,49 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
-  ArrowLeft, Star, ChevronDown, ChevronUp, ExternalLink,
-  Wifi, WifiOff, Tv2, ChevronRight, Search,
-  AlertTriangle, CheckCircle, Loader, RefreshCw, Trophy, Film
-} from 'lucide-react';
-import { fetchMovieDetails, fetchSimilar, getEmbedSources, searchMovies } from '../api';
-import ViewerBadge from '../components/ViewerBadge';
-import { useWatchProgress, withTimestamp, formatDuration, loadProgress } from '../hooks/useWatchProgress';
-import AdBanner from '../components/AdBanner';
-import type { Movie, MediaType, Stream } from '../types';
+  ArrowLeft,
+  Star,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Wifi,
+  WifiOff,
+  Tv2,
+  ChevronRight,
+  Search,
+  AlertTriangle,
+  CheckCircle,
+  Loader,
+  RefreshCw,
+  Trophy,
+  Film,
+} from "lucide-react";
+import {
+  fetchMovieDetails,
+  fetchSimilar,
+  getEmbedSources,
+  searchMovies,
+} from "../api";
+import ViewerBadge from "../components/ViewerBadge";
+import {
+  useWatchProgress,
+  withTimestamp,
+  formatDuration,
+  loadProgress,
+} from "../hooks/useWatchProgress";
+import AdBanner from "../components/AdBanner";
+import type { Movie, MediaType, Stream } from "../types";
 
-type ProbeStatus = 'idle' | 'probing' | 'found' | 'all_failed';
+type ProbeStatus = "idle" | "probing" | "found" | "all_failed";
 
 // Probe a URL by fetching it with no-cors — if it resolves (even opaque) the domain is alive
 // Smart TV browsers (Tizen, webOS, Android TV) block no-cors cross-origin fetches and throw
 // a security/sandbox error that breaks the whole player. Skip probing on TVs and assume alive.
 function isTVBrowser(): boolean {
   const ua = navigator.userAgent.toLowerCase();
-  return /tizen|webos|smart-tv|netcast|nettv|hbbtv|androidtv|crkey|googletv|viera|bravia|roku/.test(ua);
+  return /tizen|webos|smart-tv|netcast|nettv|hbbtv|androidtv|crkey|googletv|viera|bravia|roku/.test(
+    ua,
+  );
 }
 
 async function probeUrl(url: string): Promise<boolean> {
@@ -26,7 +51,11 @@ async function probeUrl(url: string): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
-    await fetch(url, { method: 'GET', mode: 'no-cors', signal: controller.signal });
+    await fetch(url, {
+      method: "GET",
+      mode: "no-cors",
+      signal: controller.signal,
+    });
     clearTimeout(timeout);
     return true; // opaque response = domain alive
   } catch {
@@ -37,20 +66,29 @@ async function probeUrl(url: string): Promise<boolean> {
 export default function MovieWatch() {
   const { type, tmdbId } = useParams<{ type: string; tmdbId: string }>();
   const navigate = useNavigate();
-  const mediaType = (type ?? 'movie') as MediaType;
+  const mediaType = (type ?? "movie") as MediaType;
   const id = Number(tmdbId);
 
-  const [movie, setMovie] = useState<(Movie & {
-    tagline?: string;
-    runtime?: number | null;
-    seasons?: { season: number; episodes: number }[];
-  }) | null>(null);
+  const [movie, setMovie] = useState<
+    | (Movie & {
+        tagline?: string;
+        runtime?: number | null;
+        seasons?: { season: number; episodes: number }[];
+      })
+    | null
+  >(null);
   const [similar, setSimilar] = useState<Movie[]>([]);
   const [streams, setStreams] = useState<Stream[]>([]);
   const [activeStream, setActiveStream] = useState<Stream | null>(null);
-  const [probeStatus, setProbeStatus] = useState<ProbeStatus>('idle');
-  const [probeProgress, setProbeProgress] = useState<{ current: number; total: number; name: string }>({ current: 0, total: 0, name: '' });
-  const [sourceStatuses, setSourceStatuses] = useState<Record<string, 'ok' | 'dead' | 'unknown'>>({});
+  const [probeStatus, setProbeStatus] = useState<ProbeStatus>("idle");
+  const [probeProgress, setProbeProgress] = useState<{
+    current: number;
+    total: number;
+    name: string;
+  }>({ current: 0, total: 0, name: "" });
+  const [sourceStatuses, setSourceStatuses] = useState<
+    Record<string, "ok" | "dead" | "unknown">
+  >({});
   const [loading, setLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState(1);
@@ -64,17 +102,17 @@ export default function MovieWatch() {
   const { elapsed, clear: clearProgress } = useWatchProgress({
     tmdbId: id,
     mediaType,
-    season: mediaType === 'tv' ? selectedSeason : undefined,
-    episode: mediaType === 'tv' ? selectedEpisode : undefined,
+    season: mediaType === "tv" ? selectedSeason : undefined,
+    episode: mediaType === "tv" ? selectedEpisode : undefined,
     isPlaying,
-    sourceName: activeStream?.source ?? '',
+    sourceName: activeStream?.source ?? "",
     title: movie?.title,
     poster: movie?.poster,
   });
 
   async function load() {
     setLoading(true);
-    setProbeStatus('idle');
+    setProbeStatus("idle");
     setSourceStatuses({});
     setIframeError(false);
     try {
@@ -108,17 +146,24 @@ export default function MovieWatch() {
   }, [tmdbId, type]);
 
   useEffect(() => {
-    if (probeStatus !== 'found') return;
+    if (probeStatus !== "found") return;
     // Use setTimeout to avoid synchronous setState inside effect body
     const show = window.setTimeout(() => setShowStreamNotice(true), 0);
     const hide = window.setTimeout(() => setShowStreamNotice(false), 5000);
-    return () => { window.clearTimeout(show); window.clearTimeout(hide); };
+    return () => {
+      window.clearTimeout(show);
+      window.clearTimeout(hide);
+    };
   }, [probeStatus, activeStream?.id]);
 
   const probeAndSet = useCallback(async (srcs: Stream[]) => {
-    setProbeStatus('probing');
-    setProbeProgress({ current: 0, total: srcs.length, name: srcs[0]?.source ?? '' });
-    const statuses: Record<string, 'ok' | 'dead' | 'unknown'> = {};
+    setProbeStatus("probing");
+    setProbeProgress({
+      current: 0,
+      total: srcs.length,
+      name: srcs[0]?.source ?? "",
+    });
+    const statuses: Record<string, "ok" | "dead" | "unknown"> = {};
     let firstFound = false;
 
     // Probe in parallel batches of 3 — fast without hammering on mobile networks
@@ -126,19 +171,28 @@ export default function MovieWatch() {
     for (let i = 0; i < srcs.length; i += BATCH) {
       const batch = srcs.slice(i, i + BATCH);
 
-      await Promise.all(batch.map(async (s) => {
-        setProbeProgress(prev => ({ ...prev, current: prev.current + 1, name: s.source }));
-        const alive = await probeUrl(s.embedUrl);
-        statuses[s.id] = alive ? 'ok' : 'dead';
-        setSourceStatuses(prev => ({ ...prev, [s.id]: alive ? 'ok' : 'dead' }));
+      await Promise.all(
+        batch.map(async (s) => {
+          setProbeProgress((prev) => ({
+            ...prev,
+            current: prev.current + 1,
+            name: s.source,
+          }));
+          const alive = await probeUrl(s.embedUrl);
+          statuses[s.id] = alive ? "ok" : "dead";
+          setSourceStatuses((prev) => ({
+            ...prev,
+            [s.id]: alive ? "ok" : "dead",
+          }));
 
-        if (alive && !firstFound) {
-          firstFound = true;
-          setActiveStream(s);
-          setProbeStatus('found');
-          setIsPlaying(true);
-        }
-      }));
+          if (alive && !firstFound) {
+            firstFound = true;
+            setActiveStream(s);
+            setProbeStatus("found");
+            setIsPlaying(true);
+          }
+        }),
+      );
 
       // After first batch resolves and we have a hit, keep probing rest in background
       // without blocking the UI — user already has a working stream
@@ -148,10 +202,15 @@ export default function MovieWatch() {
         (async () => {
           for (let j = 0; j < remaining.length; j += BATCH) {
             const restBatch = remaining.slice(j, j + BATCH);
-            await Promise.all(restBatch.map(async (s) => {
-              const alive = await probeUrl(s.embedUrl);
-              setSourceStatuses(prev => ({ ...prev, [s.id]: alive ? 'ok' : 'dead' }));
-            }));
+            await Promise.all(
+              restBatch.map(async (s) => {
+                const alive = await probeUrl(s.embedUrl);
+                setSourceStatuses((prev) => ({
+                  ...prev,
+                  [s.id]: alive ? "ok" : "dead",
+                }));
+              }),
+            );
           }
         })();
         return;
@@ -159,7 +218,7 @@ export default function MovieWatch() {
     }
 
     if (!firstFound) {
-      setProbeStatus('all_failed');
+      setProbeStatus("all_failed");
       setActiveStream(srcs[0] ?? null);
     }
   }, []);
@@ -169,7 +228,7 @@ export default function MovieWatch() {
     setSelectedEpisode(episode);
     setIframeError(false);
     setActiveStream(null);
-    setProbeStatus('idle');
+    setProbeStatus("idle");
     setSourceStatuses({});
     const srcs = getEmbedSources(id, mediaType, season, episode);
     setStreams(srcs);
@@ -188,237 +247,638 @@ export default function MovieWatch() {
     await probeAndSet(streams);
   }
 
-  if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <WatchTopBar />
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, color: 'var(--text2)' }}>
-        <div style={{ width: 36, height: 36, border: '3px solid var(--border2)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-        <span style={{ fontSize: '0.85rem' }}>Loading...</span>
+  if (loading)
+    return (
+      <div
+        style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
+      >
+        <WatchTopBar />
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "column",
+            gap: 14,
+            color: "var(--text2)",
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              border: "3px solid var(--border2)",
+              borderTop: "3px solid var(--accent)",
+              borderRadius: "50%",
+              animation: "spin .7s linear infinite",
+            }}
+          />
+          <span style={{ fontSize: "0.85rem" }}>Loading...</span>
+        </div>
       </div>
-    </div>
-  );
+    );
 
-  if (!movie) return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <WatchTopBar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--text3)' }}>
-        <WifiOff size={40} strokeWidth={1.2} />
-        <span>Content not found</span>
-        <button onClick={() => navigate('/movies')} style={{ marginTop: 8, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 20px', fontSize: '0.85rem', fontWeight: 600 }}>
-          Back to Movies
-        </button>
+  if (!movie)
+    return (
+      <div
+        style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
+      >
+        <WatchTopBar />
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            color: "var(--text3)",
+          }}
+        >
+          <WifiOff size={40} strokeWidth={1.2} />
+          <span>Content not found</span>
+          <button
+            onClick={() => navigate("/movies")}
+            style={{
+              marginTop: 8,
+              background: "var(--accent)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 20px",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+            }}
+          >
+            Back to Movies
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
 
-  const currentEmbedLabel = mediaType === 'tv' ? `S${selectedSeason} E${selectedEpisode}` : movie.title;
-  const runtimeSeconds = mediaType === 'movie' && movie.runtime ? movie.runtime * 60 : 0;
-  const remainingSeconds = runtimeSeconds ? Math.max(0, runtimeSeconds - elapsed) : 0;
+  const currentEmbedLabel =
+    mediaType === "tv" ? `S${selectedSeason} E${selectedEpisode}` : movie.title;
+  const runtimeSeconds =
+    mediaType === "movie" && movie.runtime ? movie.runtime * 60 : 0;
+  const remainingSeconds = runtimeSeconds
+    ? Math.max(0, runtimeSeconds - elapsed)
+    : 0;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--bg)",
+      }}
+    >
       <WatchTopBar />
 
       {/* Ad */}
-      <div style={{ padding: '8px 16px 0', display: 'flex', justifyContent: 'center' }}>
+      <div
+        style={{
+          padding: "8px 16px 0",
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
         <AdBanner size="leaderboard" />
       </div>
 
-      <div style={{ maxWidth: 'min(2400px, 96vw)', width: '100%', margin: '0 auto', padding: 'clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(24px, 3vw, 56px)', display: 'flex', flexDirection: 'column', gap: 'clamp(12px, 1.5vw, 24px)' }}>
-
+      <div
+        style={{
+          maxWidth: "min(2400px, 96vw)",
+          width: "100%",
+          margin: "0 auto",
+          padding:
+            "clamp(10px, 1.5vw, 28px) clamp(12px, 2vw, 36px) clamp(24px, 3vw, 56px)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "clamp(12px, 1.5vw, 24px)",
+        }}
+      >
         {/* ── Resume banner ── */}
         {showResumeBanner && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.25)',
-            borderRadius: 'var(--radius-sm)', padding: '10px 14px',
-            animation: 'fadeIn .3s ease',
-          }}>
-            <span style={{ fontSize: '1rem' }}>▶️</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "rgba(167,139,250,0.08)",
+              border: "1px solid rgba(167,139,250,0.25)",
+              borderRadius: "var(--radius-sm)",
+              padding: "10px 14px",
+              animation: "fadeIn .3s ease",
+            }}
+          >
+            <span style={{ fontSize: "1rem" }}>▶️</span>
             <div style={{ flex: 1 }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text)', fontWeight: 600 }}>
+              <span
+                style={{
+                  fontSize: "0.8rem",
+                  color: "var(--text)",
+                  fontWeight: 600,
+                }}
+              >
                 Resume from {formatDuration(Math.max(0, resumeElapsed - 10))}
               </span>
-              <span style={{ fontSize: '0.74rem', color: 'var(--text3)', marginLeft: 8 }}>
+              <span
+                style={{
+                  fontSize: "0.74rem",
+                  color: "var(--text3)",
+                  marginLeft: 8,
+                }}
+              >
                 You were watching this earlier
               </span>
             </div>
             <button
               onClick={() => {
                 if (activeStream) {
-                  const resumeUrl = withTimestamp(activeStream.embedUrl, resumeElapsed);
+                  const resumeUrl = withTimestamp(
+                    activeStream.embedUrl,
+                    resumeElapsed,
+                  );
                   setActiveStream({ ...activeStream, embedUrl: resumeUrl });
                 }
                 setShowResumeBanner(false);
               }}
               style={{
-                background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)',
-                borderRadius: 7, padding: '5px 12px', color: '#a78bfa',
-                fontSize: '0.78rem', fontWeight: 600, flexShrink: 0,
+                background: "rgba(167,139,250,0.15)",
+                border: "1px solid rgba(167,139,250,0.35)",
+                borderRadius: 7,
+                padding: "5px 12px",
+                color: "#a78bfa",
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                flexShrink: 0,
               }}
-            >Resume</button>
+            >
+              Resume
+            </button>
             <button
-              onClick={() => { setShowResumeBanner(false); clearProgress(); }}
-              style={{ background: 'none', border: 'none', color: 'var(--text3)', fontSize: '0.78rem', flexShrink: 0, padding: '4px 6px' }}
-            >Start over</button>
+              onClick={() => {
+                setShowResumeBanner(false);
+                clearProgress();
+              }}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--text3)",
+                fontSize: "0.78rem",
+                flexShrink: 0,
+                padding: "4px 6px",
+              }}
+            >
+              Start over
+            </button>
           </div>
         )}
 
         {/* ── Warning banner ── */}
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 10,
-          background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.25)',
-          borderRadius: 'var(--radius-sm)', padding: '10px 14px',
-        }}>
-          <AlertTriangle size={16} color="var(--gold)" style={{ flexShrink: 0, marginTop: 1 }} />
-          <p style={{ fontSize: '0.78rem', color: 'var(--text2)', lineHeight: 1.5 }}>
-            We automatically find a working stream for you. If playback fails or looks wrong,
-            <strong style={{ color: 'var(--text)', fontWeight: 600 }}> try another source</strong> from the list on the right — different sources have different availability by region.
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            background: "rgba(245,166,35,0.08)",
+            border: "1px solid rgba(245,166,35,0.25)",
+            borderRadius: "var(--radius-sm)",
+            padding: "10px 14px",
+          }}
+        >
+          <AlertTriangle
+            size={16}
+            color="var(--gold)"
+            style={{ flexShrink: 0, marginTop: 1 }}
+          />
+          <p
+            style={{
+              fontSize: "0.78rem",
+              color: "var(--text2)",
+              lineHeight: 1.5,
+            }}
+          >
+            We automatically find a working stream for you. If playback fails or
+            looks wrong,
+            <strong style={{ color: "var(--text)", fontWeight: 600 }}>
+              {" "}
+              try another source
+            </strong>{" "}
+            from the list on the right — different sources have different
+            availability by region.
           </p>
         </div>
 
         {/* ── Probe status bar ── */}
-        {probeStatus === 'probing' && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            background: 'var(--blue-dim)', border: '1px solid rgba(77,158,247,0.2)',
-            borderRadius: 'var(--radius-sm)', padding: '10px 14px',
-          }}>
-            <Loader size={14} color="var(--blue)" style={{ animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+        {probeStatus === "probing" && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "var(--blue-dim)",
+              border: "1px solid rgba(77,158,247,0.2)",
+              borderRadius: "var(--radius-sm)",
+              padding: "10px 14px",
+            }}
+          >
+            <Loader
+              size={14}
+              color="var(--blue)"
+              style={{ animation: "spin .8s linear infinite", flexShrink: 0 }}
+            />
             <div style={{ flex: 1 }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--blue)', fontWeight: 600 }}>
-                Finding best stream… {probeProgress.current}/{probeProgress.total}
+              <span
+                style={{
+                  fontSize: "0.78rem",
+                  color: "var(--blue)",
+                  fontWeight: 600,
+                }}
+              >
+                Finding best stream… {probeProgress.current}/
+                {probeProgress.total}
               </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text3)', marginLeft: 8 }}>
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--text3)",
+                  marginLeft: 8,
+                }}
+              >
                 Checking {probeProgress.name}
               </span>
             </div>
             {/* Progress bar */}
-            <div style={{ width: 100, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
-              <div style={{ height: '100%', background: 'var(--blue)', borderRadius: 2, width: `${(probeProgress.current / probeProgress.total) * 100}%`, transition: 'width 0.3s' }} />
+            <div
+              style={{
+                width: 100,
+                height: 4,
+                background: "var(--border)",
+                borderRadius: 2,
+                overflow: "hidden",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  background: "var(--blue)",
+                  borderRadius: 2,
+                  width: `${(probeProgress.current / probeProgress.total) * 100}%`,
+                  transition: "width 0.3s",
+                }}
+              />
             </div>
           </div>
         )}
 
-        {probeStatus === 'found' && activeStream && showStreamNotice && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: 'rgba(45,206,137,0.08)', border: '1px solid rgba(45,206,137,0.2)',
-            borderRadius: 'var(--radius-sm)', padding: '8px 14px',
-          }}>
+        {probeStatus === "found" && activeStream && showStreamNotice && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "rgba(45,206,137,0.08)",
+              border: "1px solid rgba(45,206,137,0.2)",
+              borderRadius: "var(--radius-sm)",
+              padding: "8px 14px",
+            }}
+          >
             <CheckCircle size={14} color="var(--green)" />
-            <span style={{ fontSize: '0.78rem', color: 'var(--green)', fontWeight: 600 }}>
+            <span
+              style={{
+                fontSize: "0.78rem",
+                color: "var(--green)",
+                fontWeight: 600,
+              }}
+            >
               Live stream found · {activeStream.source}
             </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>
-              · {Object.values(sourceStatuses).filter(v => v === 'ok').length} of {streams.length} sources working
+            <span style={{ fontSize: "0.75rem", color: "var(--text3)" }}>
+              · {Object.values(sourceStatuses).filter((v) => v === "ok").length}{" "}
+              of {streams.length} sources working
             </span>
           </div>
         )}
 
-        {probeStatus === 'all_failed' && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            background: 'rgba(230,57,70,0.08)', border: '1px solid rgba(230,57,70,0.2)',
-            borderRadius: 'var(--radius-sm)', padding: '10px 14px',
-          }}>
-            <WifiOff size={14} color="var(--accent)" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600, flex: 1 }}>
-              All sources returned errors. The content may not be available yet — try again later.
+        {probeStatus === "all_failed" && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "rgba(230,57,70,0.08)",
+              border: "1px solid rgba(230,57,70,0.2)",
+              borderRadius: "var(--radius-sm)",
+              padding: "10px 14px",
+            }}
+          >
+            <WifiOff
+              size={14}
+              color="var(--accent)"
+              style={{ flexShrink: 0 }}
+            />
+            <span
+              style={{
+                fontSize: "0.78rem",
+                color: "var(--accent)",
+                fontWeight: 600,
+                flex: 1,
+              }}
+            >
+              All sources returned errors. The content may not be available yet
+              — try again later.
             </span>
-            <button onClick={retryProbe} style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'none', border: '1px solid rgba(230,57,70,0.3)',
-              borderRadius: 6, padding: '4px 10px',
-              color: 'var(--accent)', fontSize: '0.75rem', flexShrink: 0,
-            }}>
+            <button
+              onClick={retryProbe}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                background: "none",
+                border: "1px solid rgba(230,57,70,0.3)",
+                borderRadius: 6,
+                padding: "4px 10px",
+                color: "var(--accent)",
+                fontSize: "0.75rem",
+                flexShrink: 0,
+              }}
+            >
               <RefreshCw size={12} /> Retry
             </button>
           </div>
         )}
 
         {/* ── Title + Meta ── */}
-        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 20,
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+          }}
+        >
           {movie.poster && (
-            <img src={movie.poster} alt={movie.title}
-              style={{ width: 100, borderRadius: 10, border: '1px solid var(--border)', flexShrink: 0 }}
-              className="desktop-only" />
+            <img
+              src={movie.poster}
+              alt={movie.title}
+              style={{
+                width: 100,
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                flexShrink: 0,
+              }}
+              className="desktop-only"
+            />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.4rem,4vw,2.2rem)', letterSpacing: '0.04em', lineHeight: 1.1 }}>{movie.title}</h1>
-            {movie.tagline && <p style={{ fontSize: '0.82rem', color: 'var(--accent)', fontStyle: 'italic', marginTop: 4 }}>{movie.tagline}</p>}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-              {movie.year && <span style={{ fontSize: '0.78rem', color: 'var(--text2)' }}>{movie.year}</span>}
-              {movie.runtime && <span style={{ fontSize: '0.78rem', color: 'var(--text2)' }}>{movie.runtime}m</span>}
-              <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: '0.78rem', color: 'var(--gold)', fontWeight: 600 }}>
-                <Star size={11} fill="var(--gold)" />{movie.rating}
-              </span>
-              {movie.mediaType === 'tv' && (
-                <span style={{ background: 'var(--blue)', color: '#fff', borderRadius: 5, padding: '1px 7px', fontSize: '0.65rem', fontWeight: 700 }}>TV SERIES</span>
+            <h1
+              style={{
+                fontFamily: "Bebas Neue",
+                fontSize: "clamp(1.4rem,4vw,2.2rem)",
+                letterSpacing: "0.04em",
+                lineHeight: 1.1,
+              }}
+            >
+              {movie.title}
+            </h1>
+            {movie.tagline && (
+              <p
+                style={{
+                  fontSize: "0.82rem",
+                  color: "var(--accent)",
+                  fontStyle: "italic",
+                  marginTop: 4,
+                }}
+              >
+                {movie.tagline}
+              </p>
+            )}
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+                marginTop: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {movie.year && (
+                <span style={{ fontSize: "0.78rem", color: "var(--text2)" }}>
+                  {movie.year}
+                </span>
               )}
-              {movie.genres.map(g => (
-                <span key={g} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '1px 8px', fontSize: '0.68rem', color: 'var(--text2)' }}>{g}</span>
+              {movie.runtime && (
+                <span style={{ fontSize: "0.78rem", color: "var(--text2)" }}>
+                  {movie.runtime}m
+                </span>
+              )}
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                  fontSize: "0.78rem",
+                  color: "var(--gold)",
+                  fontWeight: 600,
+                }}
+              >
+                <Star size={11} fill="var(--gold)" />
+                {movie.rating}
+              </span>
+              {movie.mediaType === "tv" && (
+                <span
+                  style={{
+                    background: "var(--blue)",
+                    color: "#fff",
+                    borderRadius: 5,
+                    padding: "1px 7px",
+                    fontSize: "0.65rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  TV SERIES
+                </span>
+              )}
+              {movie.genres.map((g) => (
+                <span
+                  key={g}
+                  style={{
+                    background: "var(--surface2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    padding: "1px 8px",
+                    fontSize: "0.68rem",
+                    color: "var(--text2)",
+                  }}
+                >
+                  {g}
+                </span>
               ))}
             </div>
             {movie.overview && (
-              <p style={{ fontSize: '0.82rem', color: 'var(--text2)', lineHeight: 1.6, marginTop: 10, maxWidth: 680 }}>{movie.overview}</p>
+              <p
+                style={{
+                  fontSize: "0.82rem",
+                  color: "var(--text2)",
+                  lineHeight: 1.6,
+                  marginTop: 10,
+                  maxWidth: 680,
+                }}
+              >
+                {movie.overview}
+              </p>
             )}
           </div>
         </div>
 
         {/* ── Viewer count ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <ViewerBadge id={id} active={probeStatus === 'found'} large />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <ViewerBadge id={id} active={probeStatus === "found"} large />
         </div>
 
         {/* ── TV Episode selector ── */}
-        {mediaType === 'tv' && movie.seasons && movie.seasons.length > 0 && (
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+        {mediaType === "tv" && movie.seasons && movie.seasons.length > 0 && (
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              overflow: "hidden",
+            }}
+          >
             {/* Header */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '12px 16px', borderBottom: '1px solid var(--border)',
-              background: 'var(--surface2)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 16px",
+                borderBottom: "1px solid var(--border)",
+                background: "var(--surface2)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Tv2 size={15} color="var(--accent)" />
-                <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>Episodes</span>
-                <span style={{
-                  background: 'var(--accent)', color: '#fff', borderRadius: 6,
-                  padding: '1px 8px', fontSize: '0.68rem', fontWeight: 700,
-                }}>S{selectedSeason} · E{selectedEpisode}</span>
+                <span style={{ fontWeight: 700, fontSize: "0.88rem" }}>
+                  Episodes
+                </span>
+                <span
+                  style={{
+                    background: "var(--accent)",
+                    color: "#fff",
+                    borderRadius: 6,
+                    padding: "1px 8px",
+                    fontSize: "0.68rem",
+                    fontWeight: 700,
+                  }}
+                >
+                  S{selectedSeason} · E{selectedEpisode}
+                </span>
               </div>
-              <button onClick={() => setShowEpisodes(v => !v)} style={{
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 6, padding: '4px 10px', color: 'var(--text2)',
-                fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                {showEpisodes ? <><ChevronUp size={12} /> Hide</> : <><ChevronDown size={12} /> Show</>}
+              <button
+                onClick={() => setShowEpisodes((v) => !v)}
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  padding: "4px 10px",
+                  color: "var(--text2)",
+                  fontSize: "0.75rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                {showEpisodes ? (
+                  <>
+                    <ChevronUp size={12} /> Hide
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown size={12} /> Show
+                  </>
+                )}
               </button>
             </div>
 
             {showEpisodes && (
-              <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div
+                style={{
+                  padding: 16,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                }}
+              >
                 {/* Season tabs — scrollable horizontal row */}
                 <div>
-                  <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Season</div>
-                  <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
-                    {movie.seasons.map(s => (
+                  <div
+                    style={{
+                      fontSize: "0.65rem",
+                      fontWeight: 700,
+                      color: "var(--text3)",
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Season
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      overflowX: "auto",
+                      paddingBottom: 4,
+                      scrollbarWidth: "none",
+                    }}
+                  >
+                    {movie.seasons.map((s) => (
                       <button
                         key={s.season}
                         onClick={() => setSelectedSeason(s.season)}
                         style={{
                           flexShrink: 0,
-                          padding: '7px 16px', borderRadius: 8, border: '1px solid',
-                          borderColor: selectedSeason === s.season ? 'var(--accent)' : 'var(--border)',
-                          background: selectedSeason === s.season ? 'var(--accent)' : 'var(--surface2)',
-                          color: selectedSeason === s.season ? '#fff' : 'var(--text2)',
-                          fontSize: '0.8rem', fontWeight: selectedSeason === s.season ? 700 : 400,
-                          transition: 'all 0.15s',
+                          padding: "7px 16px",
+                          borderRadius: 8,
+                          border: "1px solid",
+                          borderColor:
+                            selectedSeason === s.season
+                              ? "var(--accent)"
+                              : "var(--border)",
+                          background:
+                            selectedSeason === s.season
+                              ? "var(--accent)"
+                              : "var(--surface2)",
+                          color:
+                            selectedSeason === s.season
+                              ? "#fff"
+                              : "var(--text2)",
+                          fontSize: "0.8rem",
+                          fontWeight: selectedSeason === s.season ? 700 : 400,
+                          transition: "all 0.15s",
                         }}
                       >
                         S{s.season}
-                        <span style={{ display: 'block', fontSize: '0.6rem', opacity: 0.7, marginTop: 1 }}>
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: "0.6rem",
+                            opacity: 0.7,
+                            marginTop: 1,
+                          }}
+                        >
                           {s.episodes} ep
                         </span>
                       </button>
@@ -428,34 +888,72 @@ export default function MovieWatch() {
 
                 {/* Episode grid */}
                 <div>
-                  <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Episode</div>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))',
-                    gap: 6,
-                    maxHeight: 200,
-                    overflowY: 'auto',
-                    paddingRight: 2,
-                  }}>
+                  <div
+                    style={{
+                      fontSize: "0.65rem",
+                      fontWeight: 700,
+                      color: "var(--text3)",
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Episode
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(52px, 1fr))",
+                      gap: 6,
+                      maxHeight: 200,
+                      overflowY: "auto",
+                      paddingRight: 2,
+                    }}
+                  >
                     {Array.from(
-                      { length: movie.seasons.find(s => s.season === selectedSeason)?.episodes ?? 0 },
-                      (_, i) => i + 1
-                    ).map(ep => {
-                      const isActive = selectedSeason === selectedSeason && selectedEpisode === ep;
+                      {
+                        length:
+                          movie.seasons.find((s) => s.season === selectedSeason)
+                            ?.episodes ?? 0,
+                      },
+                      (_, i) => i + 1,
+                    ).map((ep) => {
+                      const isActive =
+                        selectedSeason === selectedSeason &&
+                        selectedEpisode === ep;
                       return (
                         <button
                           key={ep}
                           onClick={() => switchToEpisode(selectedSeason, ep)}
                           style={{
-                            padding: '9px 4px', borderRadius: 7, border: '1px solid',
-                            borderColor: isActive ? 'var(--accent)' : 'var(--border)',
-                            background: isActive ? 'var(--accent)' : 'var(--surface2)',
-                            color: isActive ? '#fff' : 'var(--text2)',
-                            fontSize: '0.82rem', fontWeight: isActive ? 700 : 400,
-                            textAlign: 'center', transition: 'all 0.12s',
+                            padding: "9px 4px",
+                            borderRadius: 7,
+                            border: "1px solid",
+                            borderColor: isActive
+                              ? "var(--accent)"
+                              : "var(--border)",
+                            background: isActive
+                              ? "var(--accent)"
+                              : "var(--surface2)",
+                            color: isActive ? "#fff" : "var(--text2)",
+                            fontSize: "0.82rem",
+                            fontWeight: isActive ? 700 : 400,
+                            textAlign: "center",
+                            transition: "all 0.12s",
                           }}
-                          onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.borderColor = 'var(--border2)'; }}
-                          onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
+                          onMouseEnter={(e) => {
+                            if (!isActive)
+                              (
+                                e.currentTarget as HTMLElement
+                              ).style.borderColor = "var(--border2)";
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isActive)
+                              (
+                                e.currentTarget as HTMLElement
+                              ).style.borderColor = "var(--border)";
+                          }}
                         >
                           {ep}
                         </button>
@@ -469,48 +967,165 @@ export default function MovieWatch() {
         )}
 
         {/* ── Player + Source sidebar ── */}
-        <div style={{ display: 'flex', gap: 'clamp(10px, 1.2vw, 24px)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-
+        <div
+          style={{
+            display: "flex",
+            gap: "clamp(10px, 1.2vw, 24px)",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
           {/* Player */}
-          <div style={{ flex: '1 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div id="movie-player" style={{
-              position: 'relative', background: '#000',
-              borderRadius: 'var(--radius)',
-              border: '1px solid var(--border)',
-              width: '100%',
-              aspectRatio: '16/9',
-              minHeight: 'clamp(200px, 56.25vw, 90vh)',
-              overflow: 'hidden',
-            }}>
+          <div
+            style={{
+              flex: "1 1 300px",
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div
+              id="movie-player"
+              style={{
+                position: "relative",
+                background: "#000",
+                borderRadius: "var(--radius)",
+                border: "1px solid var(--border)",
+                width: "100%",
+                aspectRatio: "16/9",
+                minHeight: "clamp(200px, 56.25vw, 90vh)",
+                overflow: "hidden",
+              }}
+            >
               {/* Probing overlay */}
-              {probeStatus === 'probing' && !activeStream && (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: 'var(--bg2)', zIndex: 5 }}>
-                  <div style={{ width: 40, height: 40, border: '3px solid var(--border2)', borderTop: '3px solid var(--blue)', borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>Finding best stream…</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>Checking {probeProgress.name}</div>
+              {probeStatus === "probing" && !activeStream && (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 14,
+                    background: "var(--bg2)",
+                    zIndex: 5,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      border: "3px solid var(--border2)",
+                      borderTop: "3px solid var(--blue)",
+                      borderRadius: "50%",
+                      animation: "spin .8s linear infinite",
+                    }}
+                  />
+                  <div style={{ textAlign: "center" }}>
+                    <div
+                      style={{
+                        fontSize: "0.88rem",
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Finding best stream…
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text3)" }}>
+                      Checking {probeProgress.name}
+                    </div>
                   </div>
                 </div>
               )}
 
               {iframeError ? (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'var(--bg2)', padding: 24, textAlign: 'center' }}>
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 16,
+                    background: "var(--bg2)",
+                    padding: 24,
+                    textAlign: "center",
+                  }}
+                >
                   <WifiOff size={44} strokeWidth={1.2} color="var(--text3)" />
                   <div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: 6 }}>Playback blocked</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text3)', marginBottom: 16 }}>This source refuses to embed. Pick another from the list.</div>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                      {streams.filter(s => s.id !== activeStream?.id && sourceStatuses[s.id] !== 'dead').slice(0, 3).map(s => (
-                        <button key={s.id} onClick={() => switchStream(s)} style={{
-                          padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)',
-                          background: 'var(--surface)', color: 'var(--text2)', fontSize: '0.8rem',
-                        }}>{s.source}</button>
-                      ))}
+                    <div
+                      style={{
+                        fontSize: "0.95rem",
+                        fontWeight: 600,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Playback blocked
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.8rem",
+                        color: "var(--text3)",
+                        marginBottom: 16,
+                      }}
+                    >
+                      This source refuses to embed. Pick another from the list.
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        justifyContent: "center",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      {streams
+                        .filter(
+                          (s) =>
+                            s.id !== activeStream?.id &&
+                            sourceStatuses[s.id] !== "dead",
+                        )
+                        .slice(0, 3)
+                        .map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => switchStream(s)}
+                            style={{
+                              padding: "7px 14px",
+                              borderRadius: 8,
+                              border: "1px solid var(--border2)",
+                              background: "var(--surface)",
+                              color: "var(--text2)",
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            {s.source}
+                          </button>
+                        ))}
                       {activeStream && (
-                        <a href={activeStream.embedUrl} target="_blank" rel="noreferrer" style={{
-                          display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px',
-                          borderRadius: 8, background: 'var(--accent)', color: '#fff', fontSize: '0.8rem', fontWeight: 600,
-                        }}><ExternalLink size={13} /> Open Direct</a>
+                        <a
+                          href={activeStream.embedUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            padding: "7px 14px",
+                            borderRadius: 8,
+                            background: "var(--accent)",
+                            color: "#fff",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <ExternalLink size={13} /> Open Direct
+                        </a>
                       )}
                     </div>
                   </div>
@@ -519,153 +1134,348 @@ export default function MovieWatch() {
                 <iframe
                   key={activeStream.embedUrl}
                   src={activeStream.embedUrl}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    border: "none",
+                    display: "block",
+                  }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
                   onError={() => setIframeError(true)}
                 />
               ) : null}
-
-
             </div>
 
             {/* Active stream info bar */}
-            {activeStream && probeStatus !== 'probing' && (
-              <div style={{
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)', overflow: 'hidden',
-              }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '8px 14px', flexWrap: 'wrap', gap: 8,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {activeStream && probeStatus !== "probing" && (
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "8px 14px",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
                     <Wifi size={13} color="var(--green)" />
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{activeStream.source}</span>
-                    <span style={{ fontSize: '0.65rem', background: 'var(--gold)', color: '#000', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>HD</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text3)' }}>{currentEmbedLabel}</span>
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>
+                      {activeStream.source}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "0.65rem",
+                        background: "var(--gold)",
+                        color: "#000",
+                        borderRadius: 3,
+                        padding: "1px 5px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      HD
+                    </span>
+                    <span
+                      style={{ fontSize: "0.75rem", color: "var(--text3)" }}
+                    >
+                      {currentEmbedLabel}
+                    </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
                     {elapsed > 10 && (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text3)' }}>
+                      <span
+                        style={{ fontSize: "0.7rem", color: "var(--text3)" }}
+                      >
                         {runtimeSeconds
                           ? `${formatDuration(elapsed)} watched · ${formatDuration(remainingSeconds)} left`
                           : `${formatDuration(elapsed)} watched`}
                       </span>
                     )}
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text3)' }}>
+                    <span
+                      style={{ fontSize: "0.72rem", color: "var(--text3)" }}
+                    >
                       {streams.indexOf(activeStream) + 1} of {streams.length}
                     </span>
                   </div>
                 </div>
                 {/* Progress bar — only shown for movies with known runtime */}
                 {runtimeSeconds > 0 && elapsed > 0 && (
-                  <div style={{ height: 3, background: 'var(--border)', width: '100%' }}>
-                    <div style={{
-                      height: '100%',
-                      background: 'var(--accent)',
-                      width: `${Math.min(100, (elapsed / runtimeSeconds) * 100)}%`,
-                      transition: 'width 1s linear',
-                      borderRadius: '0 2px 2px 0',
-                    }} />
+                  <div
+                    style={{
+                      height: 3,
+                      background: "var(--border)",
+                      width: "100%",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        background: "var(--accent)",
+                        width: `${Math.min(100, (elapsed / runtimeSeconds) * 100)}%`,
+                        transition: "width 1s linear",
+                        borderRadius: "0 2px 2px 0",
+                      }}
+                    />
                   </div>
                 )}
                 {/* Elapsed-only bar for TV shows or when runtime unknown */}
                 {runtimeSeconds === 0 && elapsed > 30 && (
-                  <div style={{ height: 3, background: 'var(--border)', width: '100%' }}>
-                    <div style={{
-                      height: '100%',
-                      background: 'var(--accent)',
-                      width: `${Math.min(100, (elapsed / 7200) * 100)}%`, // normalise to 2h default
-                      transition: 'width 1s linear',
-                      borderRadius: '0 2px 2px 0',
-                    }} />
+                  <div
+                    style={{
+                      height: 3,
+                      background: "var(--border)",
+                      width: "100%",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        background: "var(--accent)",
+                        width: `${Math.min(100, (elapsed / 7200) * 100)}%`, // normalise to 2h default
+                        transition: "width 1s linear",
+                        borderRadius: "0 2px 2px 0",
+                      }}
+                    />
                   </div>
                 )}
               </div>
             )}
 
             {/* Mobile source pills */}
-            <div className="mobile-only movie-source-grid" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div
+              className="mobile-only movie-source-grid"
+              style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+            >
               {[...streams]
                 .sort((a, b) => {
                   const rank = (id: string) => {
                     const s = sourceStatuses[id];
-                    if (s === 'ok') return 0;
-                    if (s === 'unknown' || s === undefined) return 1;
+                    if (s === "ok") return 0;
+                    if (s === "unknown" || s === undefined) return 1;
                     return 2;
                   };
                   return rank(a.id) - rank(b.id);
                 })
-                .map(s => {
-                const status = sourceStatuses[s.id];
-                const isActive = activeStream?.id === s.id;
-                return (
-                  <button key={s.id} onClick={() => switchStream(s)} style={{
-                    padding: '5px 12px', borderRadius: 6, border: '1px solid',
-                    borderColor: isActive ? 'var(--accent)' : status === 'dead' ? 'var(--border)' : status === 'ok' ? 'rgba(45,206,137,0.4)' : 'var(--border)',
-                    background: isActive ? 'var(--accent-dim)' : 'transparent',
-                    color: isActive ? 'var(--accent)' : status === 'dead' ? 'var(--text3)' : 'var(--text2)',
-                    fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4,
-                    opacity: status === 'dead' ? 0.4 : 1,
-                    transition: 'opacity 0.3s',
-                  }}>
-                    {status === 'ok' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />}
-                    {status === 'dead' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--text3)', display: 'inline-block' }} />}
-                    {status === 'unknown' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--border2)', display: 'inline-block' }} />}
-                    {s.source}
-                  </button>
-                );
-              })}
+                .map((s) => {
+                  const status = sourceStatuses[s.id];
+                  const isActive = activeStream?.id === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => switchStream(s)}
+                      style={{
+                        padding: "5px 12px",
+                        borderRadius: 6,
+                        border: "1px solid",
+                        borderColor: isActive
+                          ? "var(--accent)"
+                          : status === "dead"
+                            ? "var(--border)"
+                            : status === "ok"
+                              ? "rgba(45,206,137,0.4)"
+                              : "var(--border)",
+                        background: isActive
+                          ? "var(--accent-dim)"
+                          : "transparent",
+                        color: isActive
+                          ? "var(--accent)"
+                          : status === "dead"
+                            ? "var(--text3)"
+                            : "var(--text2)",
+                        fontSize: "0.75rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        opacity: status === "dead" ? 0.4 : 1,
+                        transition: "opacity 0.3s",
+                      }}
+                    >
+                      {status === "ok" && (
+                        <span
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            background: "var(--green)",
+                            display: "inline-block",
+                          }}
+                        />
+                      )}
+                      {status === "dead" && (
+                        <span
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            background: "var(--text3)",
+                            display: "inline-block",
+                          }}
+                        />
+                      )}
+                      {status === "unknown" && (
+                        <span
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: "50%",
+                            background: "var(--border2)",
+                            display: "inline-block",
+                          }}
+                        />
+                      )}
+                      {s.source}
+                    </button>
+                  );
+                })}
             </div>
           </div>
 
           {/* Source sidebar — desktop */}
-          <div className="desktop-only" style={{ width: 'clamp(240px, 20vw, 400px)', flexShrink: 0 }}>
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-              <div style={{ padding: '11px 14px 7px', fontSize: '0.66rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>
+          <div
+            className="desktop-only"
+            style={{ width: "clamp(240px, 20vw, 400px)", flexShrink: 0 }}
+          >
+            <div
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding: "11px 14px 7px",
+                  fontSize: "0.66rem",
+                  fontWeight: 700,
+                  color: "var(--text3)",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
                 Stream Sources
               </div>
               {[...streams]
                 .sort((a, b) => {
                   const rank = (id: string) => {
                     const s = sourceStatuses[id];
-                    if (s === 'ok') return 0;
-                    if (s === 'unknown' || s === undefined) return 1;
+                    if (s === "ok") return 0;
+                    if (s === "unknown" || s === undefined) return 1;
                     return 2; // dead
                   };
                   return rank(a.id) - rank(b.id);
                 })
                 .map((s, i) => {
-                const isActive = activeStream?.id === s.id;
-                const status = sourceStatuses[s.id] ?? 'unknown';
-                const dotColor = status === 'ok' ? 'var(--green)' : status === 'dead' ? 'var(--accent)' : 'var(--text3)';
-                const dotAnim = status === 'unknown' ? 'pulse 1.2s infinite' : 'none';
-                return (
-                  <button key={s.id} onClick={() => switchStream(s)} style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 14px', border: 'none', textAlign: 'left',
-                    background: isActive ? 'rgba(230,57,70,0.07)' : 'transparent',
-                    borderLeft: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`,
-                    borderBottom: '1px solid var(--border)',
-                    color: isActive ? 'var(--text)' : status === 'dead' ? 'var(--text3)' : 'var(--text2)',
-                    cursor: 'pointer', opacity: status === 'dead' ? 0.45 : 1,
-                    transition: 'background 0.15s, opacity 0.3s',
-                  }}
-                    onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--surface2)'; }}
-                    onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                  >
-                    <div style={{ width: 26, height: 26, borderRadius: 6, background: isActive ? 'var(--accent)' : 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 700, color: isActive ? '#fff' : 'var(--text3)', flexShrink: 0 }}>{i + 1}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 500 }}>{s.source}</div>
-                      <div style={{ fontSize: '0.68rem', color: 'var(--text3)' }}>
-                        {status === 'ok' ? 'Live ·' : status === 'dead' ? 'Unavailable ·' : 'Checking ·'} HD
+                  const isActive = activeStream?.id === s.id;
+                  const status = sourceStatuses[s.id] ?? "unknown";
+                  const dotColor =
+                    status === "ok"
+                      ? "var(--green)"
+                      : status === "dead"
+                        ? "var(--accent)"
+                        : "var(--text3)";
+                  const dotAnim =
+                    status === "unknown" ? "pulse 1.2s infinite" : "none";
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => switchStream(s)}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 14px",
+                        border: "none",
+                        textAlign: "left",
+                        background: isActive
+                          ? "rgba(230,57,70,0.07)"
+                          : "transparent",
+                        borderLeft: `2px solid ${isActive ? "var(--accent)" : "transparent"}`,
+                        borderBottom: "1px solid var(--border)",
+                        color: isActive
+                          ? "var(--text)"
+                          : status === "dead"
+                            ? "var(--text3)"
+                            : "var(--text2)",
+                        cursor: "pointer",
+                        opacity: status === "dead" ? 0.45 : 1,
+                        transition: "background 0.15s, opacity 0.3s",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive)
+                          (e.currentTarget as HTMLElement).style.background =
+                            "var(--surface2)";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive)
+                          (e.currentTarget as HTMLElement).style.background =
+                            "transparent";
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: 6,
+                          background: isActive
+                            ? "var(--accent)"
+                            : "var(--surface2)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "0.72rem",
+                          fontWeight: 700,
+                          color: isActive ? "#fff" : "var(--text3)",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {i + 1}
                       </div>
-                    </div>
-                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0, animation: dotAnim }} />
-                  </button>
-                );
-              })}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: "0.82rem", fontWeight: 500 }}>
+                          {s.source}
+                        </div>
+                        <div
+                          style={{ fontSize: "0.68rem", color: "var(--text3)" }}
+                        >
+                          {status === "ok"
+                            ? "Live ·"
+                            : status === "dead"
+                              ? "Unavailable ·"
+                              : "Checking ·"}{" "}
+                          HD
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: dotColor,
+                          flexShrink: 0,
+                          animation: dotAnim,
+                        }}
+                      />
+                    </button>
+                  );
+                })}
             </div>
           </div>
         </div>
@@ -673,20 +1483,86 @@ export default function MovieWatch() {
         {/* Similar */}
         {similar.length > 0 && (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h3 style={{ fontFamily: 'Bebas Neue', fontSize: '1.15rem', letterSpacing: '0.06em' }}>More Like This</h3>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
+              }}
+            >
+              <h3
+                style={{
+                  fontFamily: "Bebas Neue",
+                  fontSize: "1.15rem",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                More Like This
+              </h3>
               <ChevronRight size={16} color="var(--text3)" />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
-              {similar.map(m => (
-                <div key={m.id} onClick={() => navigate(`/movies/watch/${m.mediaType}/${m.tmdbId}`)} style={{ cursor: 'pointer', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)', border: '1px solid var(--border)', transition: 'transform 0.15s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'none'; }}>
-                  <div style={{ aspectRatio: '2/3', background: 'var(--surface2)' }}>
-                    {m.poster && <img src={m.poster} alt={m.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                gap: 10,
+              }}
+            >
+              {similar.map((m) => (
+                <div
+                  key={m.id}
+                  onClick={() =>
+                    navigate(`/movies/watch/${m.mediaType}/${m.tmdbId}`)
+                  }
+                  style={{
+                    cursor: "pointer",
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    transition: "transform 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.transform =
+                      "translateY(-3px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.transform = "none";
+                  }}
+                >
+                  <div
+                    style={{
+                      aspectRatio: "2/3",
+                      background: "var(--surface2)",
+                    }}
+                  >
+                    {m.poster && (
+                      <img
+                        src={m.poster}
+                        alt={m.title}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    )}
                   </div>
-                  <div style={{ padding: '6px 8px' }}>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 600, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', color: 'var(--text)' }}>{m.title}</div>
+                  <div style={{ padding: "6px 8px" }}>
+                    <div
+                      style={{
+                        fontSize: "0.72rem",
+                        fontWeight: 600,
+                        overflow: "hidden",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        color: "var(--text)",
+                      }}
+                    >
+                      {m.title}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -694,7 +1570,7 @@ export default function MovieWatch() {
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <div style={{ display: "flex", justifyContent: "center" }}>
           <AdBanner size="rectangle" />
         </div>
       </div>
@@ -704,17 +1580,23 @@ export default function MovieWatch() {
 
 function WatchTopBar() {
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<import('../types').Movie[]>([]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<import("../types").Movie[]>([]);
   const [searching, setSearching] = useState(false);
   const [showDrop, setShowDrop] = useState(false);
-  const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const wrapRef = useRef<HTMLDivElement>(null);
 
   function handleSearch(q: string) {
     setQuery(q);
     clearTimeout(searchRef.current);
-    if (!q.trim()) { setResults([]); setShowDrop(false); return; }
+    if (!q.trim()) {
+      setResults([]);
+      setShowDrop(false);
+      return;
+    }
     setSearching(true);
     setShowDrop(true);
     searchRef.current = setTimeout(async () => {
@@ -724,8 +1606,8 @@ function WatchTopBar() {
     }, 380);
   }
 
-  function pick(m: import('../types').Movie) {
-    setQuery('');
+  function pick(m: import("../types").Movie) {
+    setQuery("");
     setResults([]);
     setShowDrop(false);
     navigate(`/movies/watch/${m.mediaType}/${m.tmdbId}`);
@@ -734,91 +1616,237 @@ function WatchTopBar() {
   // Close dropdown on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setShowDrop(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+        setShowDrop(false);
     }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   return (
-    <div className="watch-topbar" style={{
-      display: 'flex', alignItems: 'center', gap: 'clamp(8px, 1vw, 18px)',
-      padding: '0 clamp(12px, 2vw, 40px)', height: 'var(--header-h)',
-      background: 'rgba(8,10,15,0.96)', backdropFilter: 'blur(20px)',
-      borderBottom: '1px solid var(--border)',
-      position: 'sticky', top: 0, zIndex: 100,
-    }}>
-      <button onClick={() => navigate('/movies')} style={{
-        display: 'flex', alignItems: 'center', gap: 7,
-        background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 8, padding: '6px 12px', color: 'var(--text2)', fontSize: '0.82rem', fontWeight: 500,
-        flexShrink: 0,
-      }}>
+    <div
+      className="watch-topbar"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "clamp(8px, 1vw, 18px)",
+        padding: "0 clamp(12px, 2vw, 40px)",
+        height: "var(--header-h)",
+        background: "rgba(8,10,15,0.96)",
+        backdropFilter: "blur(20px)",
+        borderBottom: "1px solid var(--border)",
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+      }}
+    >
+      <button
+        onClick={() => navigate("/movies")}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          padding: "6px 12px",
+          color: "var(--text2)",
+          fontSize: "0.82rem",
+          fontWeight: 500,
+          flexShrink: 0,
+        }}
+      >
         <ArrowLeft size={14} /> Back
       </button>
-      <button onClick={() => navigate('/')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, flexShrink: 0 }}>
-        <div style={{ background: 'var(--accent)', borderRadius: 7, padding: 5, display: 'flex' }}>
-          <Tv2 size={15} color="#fff" />
-        </div>
-        <span className="desktop-only" style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.2rem, 1.8vw, 2.2rem)', letterSpacing: '0.08em', color: 'var(--text)' }}>
-          STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
-        </span>
-      </button>
+        <button onClick={() => go('/')} style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'none', border: 'none', padding: 0, flexShrink: 0,
+        }}>
+          <img
+            src="/logo.png"
+            alt="StreamZone"
+            style={{ height: 36, width: 36, objectFit: 'contain', borderRadius: 8 }}
+          />
+          <span style={{ fontFamily: 'Bebas Neue', fontSize: '1.45rem', letterSpacing: '0.08em', color: 'var(--text)' }}>
+            STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
+          </span>
+        </button>
 
       {/* Search bar */}
-      <div ref={wrapRef} style={{ flex: 1, maxWidth: 360, position: 'relative' }}>
-        <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+      <div
+        ref={wrapRef}
+        style={{ flex: 1, maxWidth: 360, position: "relative" }}
+      >
+        <Search
+          size={13}
+          style={{
+            position: "absolute",
+            left: 10,
+            top: "50%",
+            transform: "translateY(-50%)",
+            color: "var(--text3)",
+            pointerEvents: "none",
+          }}
+        />
         <input
           value={query}
-          onChange={e => handleSearch(e.target.value)}
-          onFocus={e => { if (results.length > 0) setShowDrop(true); e.currentTarget.style.borderColor = 'var(--border2)'; }}
-          onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+          onChange={(e) => handleSearch(e.target.value)}
+          onFocus={(e) => {
+            if (results.length > 0) setShowDrop(true);
+            e.currentTarget.style.borderColor = "var(--border2)";
+          }}
+          onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border)")}
           placeholder="Search movies & series…"
           style={{
-            width: '100%', background: 'var(--surface)', border: '1px solid var(--border)',
-            borderRadius: 8, padding: '7px 10px 7px 30px',
-            color: 'var(--text)', fontSize: '0.8rem', outline: 'none',
+            width: "100%",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: "7px 10px 7px 30px",
+            color: "var(--text)",
+            fontSize: "0.8rem",
+            outline: "none",
           }}
         />
         {/* Dropdown results */}
         {showDrop && (
-          <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
-            background: 'var(--surface)', border: '1px solid var(--border2)',
-            borderRadius: 10, overflow: 'hidden', zIndex: 200,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          }}>
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 6px)",
+              left: 0,
+              right: 0,
+              background: "var(--surface)",
+              border: "1px solid var(--border2)",
+              borderRadius: 10,
+              overflow: "hidden",
+              zIndex: 200,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            }}
+          >
             {searching ? (
-              <div style={{ padding: '14px', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text3)' }}>Searching…</div>
-            ) : results.length === 0 ? (
-              <div style={{ padding: '14px', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text3)' }}>No results</div>
-            ) : results.map(m => (
-              <button key={m.tmdbId} onClick={() => pick(m)} style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--border)',
-                background: 'transparent', color: 'var(--text)', textAlign: 'left', cursor: 'pointer',
-              }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              <div
+                style={{
+                  padding: "14px",
+                  textAlign: "center",
+                  fontSize: "0.78rem",
+                  color: "var(--text3)",
+                }}
               >
-                {m.poster
-                  ? <img src={m.poster} alt={m.title} style={{ width: 32, height: 46, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
-                  : <div style={{ width: 32, height: 46, background: 'var(--surface2)', borderRadius: 4, flexShrink: 0 }} />
-                }
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text3)', marginTop: 2, display: 'flex', gap: 6 }}>
-                    <span>{m.year}</span>
-                    <span style={{ background: m.mediaType === 'tv' ? 'var(--blue)' : 'var(--surface2)', borderRadius: 4, padding: '0 5px', fontSize: '0.62rem', fontWeight: 700, color: m.mediaType === 'tv' ? '#fff' : 'var(--text3)' }}>
-                      {m.mediaType === 'tv' ? 'TV' : 'MOVIE'}
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--gold)' }}>
-                      <Star size={9} fill="var(--gold)" />{m.rating}
-                    </span>
+                Searching…
+              </div>
+            ) : results.length === 0 ? (
+              <div
+                style={{
+                  padding: "14px",
+                  textAlign: "center",
+                  fontSize: "0.78rem",
+                  color: "var(--text3)",
+                }}
+              >
+                No results
+              </div>
+            ) : (
+              results.map((m) => (
+                <button
+                  key={m.tmdbId}
+                  onClick={() => pick(m)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    border: "none",
+                    borderBottom: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "var(--surface2)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
+                  {m.poster ? (
+                    <img
+                      src={m.poster}
+                      alt={m.title}
+                      style={{
+                        width: 32,
+                        height: 46,
+                        objectFit: "cover",
+                        borderRadius: 4,
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 32,
+                        height: 46,
+                        background: "var(--surface2)",
+                        borderRadius: 4,
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 600,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {m.title}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.7rem",
+                        color: "var(--text3)",
+                        marginTop: 2,
+                        display: "flex",
+                        gap: 6,
+                      }}
+                    >
+                      <span>{m.year}</span>
+                      <span
+                        style={{
+                          background:
+                            m.mediaType === "tv"
+                              ? "var(--blue)"
+                              : "var(--surface2)",
+                          borderRadius: 4,
+                          padding: "0 5px",
+                          fontSize: "0.62rem",
+                          fontWeight: 700,
+                          color: m.mediaType === "tv" ? "#fff" : "var(--text3)",
+                        }}
+                      >
+                        {m.mediaType === "tv" ? "TV" : "MOVIE"}
+                      </span>
+                      <span
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 2,
+                          color: "var(--gold)",
+                        }}
+                      >
+                        <Star size={9} fill="var(--gold)" />
+                        {m.rating}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -828,28 +1856,57 @@ function WatchTopBar() {
   );
 }
 
-function WatchModeTabs({ active }: { active: 'sports' | 'movies' }) {
+function WatchModeTabs({ active }: { active: "sports" | "movies" }) {
   const navigate = useNavigate();
   return (
-    <div className="watch-mode-tabs" style={{
-      display: 'flex', alignItems: 'center', gap: 3,
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 10, padding: 3, marginLeft: 'auto',
-    }}>
+    <div
+      className="watch-mode-tabs"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 3,
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        padding: 3,
+        marginLeft: "auto",
+      }}
+    >
       {[
-        { id: 'sports', path: '/', label: 'Sports', icon: <Trophy size={13} /> },
-        { id: 'movies', path: '/movies', label: 'Movies', icon: <Film size={13} /> },
-      ].map(tab => {
+        {
+          id: "sports",
+          path: "/",
+          label: "Sports",
+          icon: <Trophy size={13} />,
+        },
+        {
+          id: "movies",
+          path: "/movies",
+          label: "Movies",
+          icon: <Film size={13} />,
+        },
+      ].map((tab) => {
         const isActive = active === tab.id;
         return (
-          <button key={tab.id} onClick={() => navigate(tab.path)} style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            padding: '5px 12px', borderRadius: 7, border: 'none',
-            background: isActive ? 'var(--accent)' : 'transparent',
-            color: isActive ? '#fff' : 'var(--text2)',
-            fontSize: '0.8rem', fontWeight: isActive ? 700 : 400,
-          }}>
-            {tab.icon}{tab.label}
+          <button
+            key={tab.id}
+            onClick={() => navigate(tab.path)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 5,
+              padding: "5px 12px",
+              borderRadius: 7,
+              border: "none",
+              background: isActive ? "var(--accent)" : "transparent",
+              color: isActive ? "#fff" : "var(--text2)",
+              fontSize: "0.8rem",
+              fontWeight: isActive ? 700 : 400,
+            }}
+          >
+            {tab.icon}
+            {tab.label}
           </button>
         );
       })}

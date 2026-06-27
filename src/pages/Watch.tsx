@@ -982,40 +982,19 @@ function TopBar({ onBack }: { onBack: () => void }) {
       </button>
 
       {/* Logo */}
-      <button
-        onClick={() => nav("/")}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            background: "var(--accent)",
-            borderRadius: 7,
-            padding: "5px",
-            display: "flex",
-          }}
-        >
-          <Tv2 size={15} color="#fff" />
-        </div>
-        <span
-          style={{
-            fontFamily: "Bebas Neue",
-            fontSize: "clamp(1.2rem, 1.8vw, 2.2rem)",
-            letterSpacing: "0.08em",
-            color: "var(--text)",
-          }}
-        >
-          STREAM<span style={{ color: "var(--accent)" }}>ZONE</span>
-        </span>
-      </button>
+        <button onClick={() => go('/')} style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'none', border: 'none', padding: 0, flexShrink: 0,
+        }}>
+          <img
+            src="/logo.png"
+            alt="StreamZone"
+            style={{ height: 36, width: 36, objectFit: 'contain', borderRadius: 8 }}
+          />
+          <span style={{ fontFamily: 'Bebas Neue', fontSize: '1.45rem', letterSpacing: '0.08em', color: 'var(--text)' }}>
+            STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
+          </span>
+        </button>
 
       {/* Sports / Movies tabs */}
       <div
