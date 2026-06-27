@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Wifi, WifiOff, Maximize2, Minimize2,
+  ArrowLeft, Wifi, WifiOff,
   ExternalLink, Star, Clock, ChevronDown, ChevronUp, Tv2, Trophy, Film
 } from 'lucide-react';
 import { fetchStreams, fetchAllMatches, badgeUrl, getDaddyStreams, fetchDaddyEvents } from '../api';
@@ -108,15 +108,6 @@ export default function Watch() {
     setActiveStream(s);
     setIframeError(false);
     
-  }
-
-  function toggleFullscreen() {
-    if (!playerWrapRef.current) return;
-    if (!document.fullscreenElement) {
-      playerWrapRef.current.requestFullscreen().then(() => setIsFullscreen(true));
-    } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false));
-    }
   }
 
   useEffect(() => {
@@ -291,24 +282,7 @@ export default function Watch() {
 />
               ) : null}
 
-              {/* Fullscreen + direct link overlay controls */}
-              {!loadingStreams && streams.length > 0 && !iframeError && (
-                <div style={{
-                  position: 'absolute', bottom: 10, right: 10,
-                  display: 'flex', gap: 6,
-                  zIndex: 10,
-                  pointerEvents: 'auto',
-                }}>
-                  <button onClick={toggleFullscreen} style={{
-                    background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: 7, padding: '6px', color: '#fff', display: 'flex',
-                    backdropFilter: 'blur(6px)',
-                    cursor: 'pointer',
-                  }} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
-                    {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                  </button>
-                </div>
-              )}
+
             </div>
 
             {/* Active stream info bar */}

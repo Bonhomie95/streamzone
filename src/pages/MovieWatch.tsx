@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Star, ChevronDown, ChevronUp, ExternalLink,
-  Wifi, WifiOff, Maximize2, Minimize2, Tv2, ChevronRight,
+  Wifi, WifiOff, Tv2, ChevronRight,
   AlertTriangle, CheckCircle, Loader, RefreshCw, Trophy, Film
 } from 'lucide-react';
 import { fetchMovieDetails, fetchSimilar, getEmbedSources } from '../api';
@@ -53,7 +53,6 @@ export default function MovieWatch() {
   const [sourceStatuses, setSourceStatuses] = useState<Record<string, 'ok' | 'dead' | 'unknown'>>({});
   const [loading, setLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [selectedEpisode, setSelectedEpisode] = useState(1);
   const [showEpisodes, setShowEpisodes] = useState(false);
@@ -77,12 +76,6 @@ export default function MovieWatch() {
     window.scrollTo(0, 0);
     load();
   }, [tmdbId, type]);
-
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
-  }, []);
 
   useEffect(() => {
     if (probeStatus !== 'found') return;
@@ -170,13 +163,6 @@ export default function MovieWatch() {
     setActiveStream(s);
     setIframeError(false);
     setIsPlaying(true);
-  }
-
-  async function toggleFullscreen() {
-    const el = document.getElementById('movie-player');
-    if (!el) return;
-    if (!document.fullscreenElement) await el.requestFullscreen();
-    else await document.exitFullscreen();
   }
 
   async function retryProbe() {
@@ -416,7 +402,7 @@ export default function MovieWatch() {
           <div style={{ flex: '1 1 300px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div id="movie-player" style={{
               position: 'relative', background: '#000',
-              borderRadius: isFullscreen ? 0 : 'var(--radius)',
+              borderRadius: 'var(--radius)',
               border: '1px solid var(--border)',
               width: '100%',
               aspectRatio: '16/9',
@@ -467,20 +453,7 @@ export default function MovieWatch() {
                 />
               ) : null}
 
-              {/* Fullscreen button */}
-              {activeStream && !iframeError && probeStatus !== 'probing' && (
-                <button onClick={toggleFullscreen} style={{
-                  position: 'absolute', bottom: 10, right: 10,
-                  background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 7, padding: 6, color: '#fff', display: 'flex',
-                  backdropFilter: 'blur(6px)',
-                  zIndex: 10,
-                  pointerEvents: 'auto',
-                  cursor: 'pointer',
-                }}>
-                  {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                </button>
-              )}
+
             </div>
 
             {/* Active stream info bar */}
