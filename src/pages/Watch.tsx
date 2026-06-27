@@ -296,11 +296,14 @@ export default function Watch() {
                 <div style={{
                   position: 'absolute', bottom: 10, right: 10,
                   display: 'flex', gap: 6,
+                  zIndex: 10,
+                  pointerEvents: 'auto',
                 }}>
                   <button onClick={toggleFullscreen} style={{
                     background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: 7, padding: '6px', color: '#fff', display: 'flex',
                     backdropFilter: 'blur(6px)',
+                    cursor: 'pointer',
                   }} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
                     {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                   </button>

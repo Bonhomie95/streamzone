@@ -474,6 +474,9 @@ export default function MovieWatch() {
                   background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: 7, padding: 6, color: '#fff', display: 'flex',
                   backdropFilter: 'blur(6px)',
+                  zIndex: 10,
+                  pointerEvents: 'auto',
+                  cursor: 'pointer',
                 }}>
                   {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                 </button>
