@@ -319,6 +319,9 @@ export default function MovieHome() {
               ))}
             </div>
           )}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 8px' }}>
+          <AdBanner size="rectangle" />
+        </div>
         </main>
       </div>
     </div>

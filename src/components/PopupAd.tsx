@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
  */
 
 const POPUP_KEY = 'sz_popup_last';
-const INTERVAL_MS = 30 * 60 * 1000;
+const INTERVAL_MS = 20 * 60 * 1000;
 
 function isLocalhost() {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
@@ -40,6 +40,7 @@ export default function PopupAd() {
     const script = document.createElement('script');
     script.src = 'https://pl30098045.effectivecpmnetwork.com/fc/41/1b/fc411baca5757b1efcca0bec6e2446f1.js';
     script.async = true;
+    script.setAttribute('data-cfasync', 'false');
     document.body.appendChild(script);
   }, []);
 
