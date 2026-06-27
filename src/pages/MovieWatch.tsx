@@ -117,33 +117,49 @@ export default function MovieWatch() {
     setProbeStatus('probing');
     setProbeProgress({ current: 0, total: srcs.length, name: srcs[0]?.source ?? '' });
     const statuses: Record<string, 'ok' | 'dead' | 'unknown'> = {};
+    let firstFound = false;
 
-    for (let i = 0; i < srcs.length; i++) {
-      const s = srcs[i];
-      setProbeProgress({ current: i + 1, total: srcs.length, name: s.source });
-      const alive = await probeUrl(s.embedUrl);
-      statuses[s.id] = alive ? 'ok' : 'dead';
-      setSourceStatuses({ ...statuses });
+    // Probe in parallel batches of 3 — fast without hammering on mobile networks
+    const BATCH = 3;
+    for (let i = 0; i < srcs.length; i += BATCH) {
+      const batch = srcs.slice(i, i + BATCH);
 
-      if (alive) {
-        // Found a live one — set it and stop probing
-        setActiveStream(s);
-        setProbeStatus('found');
-        setIsPlaying(true);
-        // Continue probing the rest in background to update status indicators
-        for (let j = i + 1; j < srcs.length; j++) {
-          const rest = srcs[j];
-          const r = await probeUrl(rest.embedUrl);
-          statuses[rest.id] = r ? 'ok' : 'dead';
-          setSourceStatuses({ ...statuses });
+      await Promise.all(batch.map(async (s) => {
+        setProbeProgress(prev => ({ ...prev, current: prev.current + 1, name: s.source }));
+        const alive = await probeUrl(s.embedUrl);
+        statuses[s.id] = alive ? 'ok' : 'dead';
+        setSourceStatuses(prev => ({ ...prev, [s.id]: alive ? 'ok' : 'dead' }));
+
+        if (alive && !firstFound) {
+          firstFound = true;
+          setActiveStream(s);
+          setProbeStatus('found');
+          setIsPlaying(true);
         }
+      }));
+
+      // After first batch resolves and we have a hit, keep probing rest in background
+      // without blocking the UI — user already has a working stream
+      if (firstFound && i + BATCH < srcs.length) {
+        const remaining = srcs.slice(i + BATCH);
+        // Fire off remaining probes in background, no await
+        (async () => {
+          for (let j = 0; j < remaining.length; j += BATCH) {
+            const restBatch = remaining.slice(j, j + BATCH);
+            await Promise.all(restBatch.map(async (s) => {
+              const alive = await probeUrl(s.embedUrl);
+              setSourceStatuses(prev => ({ ...prev, [s.id]: alive ? 'ok' : 'dead' }));
+            }));
+          }
+        })();
         return;
       }
     }
 
-    // All failed
-    setProbeStatus('all_failed');
-    setActiveStream(srcs[0] ?? null); // set first anyway, user can try manually
+    if (!firstFound) {
+      setProbeStatus('all_failed');
+      setActiveStream(srcs[0] ?? null);
+    }
   }, []);
 
   async function switchToEpisode(season: number, episode: number) {
@@ -514,7 +530,17 @@ export default function MovieWatch() {
 
             {/* Mobile source pills */}
             <div className="mobile-only movie-source-grid" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {streams.map(s => {
+              {[...streams]
+                .sort((a, b) => {
+                  const rank = (id: string) => {
+                    const s = sourceStatuses[id];
+                    if (s === 'ok') return 0;
+                    if (s === 'unknown' || s === undefined) return 1;
+                    return 2;
+                  };
+                  return rank(a.id) - rank(b.id);
+                })
+                .map(s => {
                 const status = sourceStatuses[s.id];
                 const isActive = activeStream?.id === s.id;
                 return (
@@ -524,7 +550,8 @@ export default function MovieWatch() {
                     background: isActive ? 'var(--accent-dim)' : 'transparent',
                     color: isActive ? 'var(--accent)' : status === 'dead' ? 'var(--text3)' : 'var(--text2)',
                     fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4,
-                    opacity: status === 'dead' ? 0.5 : 1,
+                    opacity: status === 'dead' ? 0.4 : 1,
+                    transition: 'opacity 0.3s',
                   }}>
                     {status === 'ok' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />}
                     {status === 'dead' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--text3)', display: 'inline-block' }} />}
@@ -542,7 +569,17 @@ export default function MovieWatch() {
               <div style={{ padding: '11px 14px 7px', fontSize: '0.66rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>
                 Stream Sources
               </div>
-              {streams.map((s, i) => {
+              {[...streams]
+                .sort((a, b) => {
+                  const rank = (id: string) => {
+                    const s = sourceStatuses[id];
+                    if (s === 'ok') return 0;
+                    if (s === 'unknown' || s === undefined) return 1;
+                    return 2; // dead
+                  };
+                  return rank(a.id) - rank(b.id);
+                })
+                .map((s, i) => {
                 const isActive = activeStream?.id === s.id;
                 const status = sourceStatuses[s.id] ?? 'unknown';
                 const dotColor = status === 'ok' ? 'var(--green)' : status === 'dead' ? 'var(--accent)' : 'var(--text3)';
@@ -555,8 +592,8 @@ export default function MovieWatch() {
                     borderLeft: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`,
                     borderBottom: '1px solid var(--border)',
                     color: isActive ? 'var(--text)' : status === 'dead' ? 'var(--text3)' : 'var(--text2)',
-                    cursor: 'pointer', opacity: status === 'dead' ? 0.55 : 1,
-                    transition: 'background 0.15s',
+                    cursor: 'pointer', opacity: status === 'dead' ? 0.45 : 1,
+                    transition: 'background 0.15s, opacity 0.3s',
                   }}
                     onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--surface2)'; }}
                     onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}

@@ -259,6 +259,41 @@ export function getEmbedSources(
         ? `https://player.autoembed.cc/embed/tv/${tmdbId}/${season}/${episode}`
         : `https://player.autoembed.cc/embed/movie/${tmdbId}`,
     },
+    // vidsrc.xyz — newer node of the vidsrc network
+    {
+      name: "VidSrc.xyz",
+      url: isTV
+        ? `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
+        : `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`,
+    },
+    // nontonflix — broad library, TMDB-based
+    {
+      name: "NontonFlix",
+      url: isTV
+        ? `https://nontonflix.com/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://nontonflix.com/embed/movie/${tmdbId}`,
+    },
+    // superembed.stream — active, good uptime
+    {
+      name: "SuperEmbed",
+      url: isTV
+        ? `https://superembed.stream/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
+        : `https://superembed.stream/embed/movie?tmdb=${tmdbId}`,
+    },
+    // embedsoap.net — clean embeddable player
+    {
+      name: "EmbedSoap",
+      url: isTV
+        ? `https://www.embedsoap.net/embed/tv/?id=${tmdbId}&s=${season}&e=${episode}`
+        : `https://www.embedsoap.net/embed/movie/?id=${tmdbId}`,
+    },
+    // vidsrc.in — independent node, good for non-US titles
+    {
+      name: "VidSrc.in",
+      url: isTV
+        ? `https://vidsrc.in/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
+        : `https://vidsrc.in/embed/movie?tmdb=${tmdbId}`,
+    },
   ];
 
   return sources.map((s, i) => ({
