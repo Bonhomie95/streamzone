@@ -114,9 +114,13 @@ export default function Watch() {
     load();
   }, [matchId]);
 
-  // Load streams once match is available
+  // Load streams only for live matches — upcoming/finished have no active streams
   useEffect(() => {
     if (!match) return;
+    if (match.status !== 'live') {
+      setLoadingStreams(false);
+      return;
+    }
     loadStreams(match);
   }, [match]);
 
@@ -546,13 +550,27 @@ export default function Watch() {
                     color: "var(--text3)",
                   }}
                 >
-                  <WifiOff size={44} strokeWidth={1.2} />
-                  <span style={{ fontSize: "0.9rem" }}>
-                    No streams available
-                  </span>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text3)" }}>
-                    Check back when the match goes live
-                  </span>
+                  {match?.status === "upcoming" ? (
+                    <>
+                      <Clock size={44} strokeWidth={1.2} />
+                      <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>
+                        Match not live yet
+                      </span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text3)", textAlign: "center", maxWidth: 260 }}>
+                        Streams will be available once this match goes live
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff size={44} strokeWidth={1.2} />
+                      <span style={{ fontSize: "0.9rem" }}>
+                        No streams available
+                      </span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text3)" }}>
+                        Check back when the match goes live
+                      </span>
+                    </>
+                  )}
                 </div>
               ) : iframeError ? (
                 <div

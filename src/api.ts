@@ -127,7 +127,7 @@ function normaliseMatch(m: any): EnrichedMatch {
   return {
     id: String(m.id),
     title: m.title ?? "",
-    category: m.category ?? "",
+    category: (m.category ?? "").toLowerCase(),
     date: m.date,
     poster: m.poster,
     popular: m.popular ?? false,

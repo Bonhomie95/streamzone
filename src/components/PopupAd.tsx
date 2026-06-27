@@ -1,15 +1,12 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * PopupAd — injects the effectivecpmnetwork pop script once per 15 minutes.
- * Mount this ONLY on home pages (sports home + movie home).
- * Do NOT mount on watch pages — the stream embeds already have their own ads.
- *
- * The script fires a pop/popunder automatically — no visible component rendered.
+ * PopupAd — legacy duplicate of AdPopup, kept for compatibility.
+ * Prefer AdPopup in new code.
  */
 
 const POPUP_KEY = 'sz_popup_last';
-const INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const INTERVAL_MS = 30 * 60 * 1000;
 
 function shouldShowPopup(): boolean {
   try {
@@ -36,14 +33,10 @@ export default function PopupAd() {
     markPopupShown();
 
     const script = document.createElement('script');
-    script.src = 'https://pl29600593.effectivecpmnetwork.com/e6/9b/20/e69b208f6c66a101b4555236597e684c.js';
+    script.src = 'https://pl30098045.effectivecpmnetwork.com/fc/41/1b/fc411baca5757b1efcca0bec6e2446f1.js';
     script.async = true;
     document.body.appendChild(script);
-
-    return () => {
-      // Don't remove — once fired the pop has already opened
-    };
   }, []);
 
-  return null; // renders nothing
+  return null;
 }

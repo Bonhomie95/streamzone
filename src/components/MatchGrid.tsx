@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { EnrichedMatch } from '../types';
 import { fetchBulkViewCounts } from '../hooks/useViewCount';
 import MatchCard from './MatchCard';
@@ -9,7 +9,6 @@ interface MatchGridProps {
   loading: boolean;
 }
 
-// Responsive card min width: wider screens get bigger cards
 function getCardMinWidth(): string {
   const w = window.innerWidth;
   if (w >= 3840) return '420px';
@@ -19,13 +18,24 @@ function getCardMinWidth(): string {
 }
 
 export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridProps) {
+  // viewCounts is keyed by match ID — only contains live match counts
   const [viewCounts, setViewCounts] = useState<Record<string, number>>({});
   const minWidth = getCardMinWidth();
 
+  // Stable dep: only re-fetch when the set of live match IDs actually changes
+  const liveIds = useMemo(
+    () => matches.filter(m => m.status === 'live').map(m => m.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [matches.filter(m => m.status === 'live').map(m => m.id).join(',')]
+  );
+
   useEffect(() => {
-    if (matches.length === 0) return;
-    fetchBulkViewCounts(matches.map(m => m.id)).then(setViewCounts);
-  }, [matches.map(m => m.id).join(',')]);
+    if (liveIds.length === 0) {
+      setViewCounts({});
+      return;
+    }
+    fetchBulkViewCounts(liveIds).then(setViewCounts);
+  }, [liveIds.join(',')]);
 
   const gridStyle = {
     display: 'grid',
@@ -67,7 +77,13 @@ export default function MatchGrid({ matches, onMatchClick, loading }: MatchGridP
   return (
     <div style={gridStyle}>
       {matches.map(m => (
-        <MatchCard key={m.id} match={m} onClick={() => onMatchClick(m)} viewCount={viewCounts[m.id] ?? null} />
+        <MatchCard
+          key={m.id}
+          match={m}
+          onClick={() => onMatchClick(m)}
+          // Only pass viewCount for live matches — non-live cards show nothing
+          viewCount={m.status === 'live' ? (viewCounts[m.id] ?? null) : undefined}
+        />
       ))}
     </div>
   );

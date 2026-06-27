@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, Star, Play } from 'lucide-react';
+import { Clock, Star, Play, Bell } from 'lucide-react';
 import type { EnrichedMatch } from '../types';
 import ViewerBadge from './ViewerBadge';
 import { formatViewCount } from '../hooks/useViewCount';
@@ -27,15 +27,32 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
   const homeBadge = match.teams?.home?.badge ? badgeUrl(match.teams.home.badge) : '';
   const awayBadge = match.teams?.away?.badge ? badgeUrl(match.teams.away.badge) : '';
 
+  // Build the watch URL so we can support open-in-new-tab natively
+  const watchUrl = `/watch/${encodeURIComponent(match.id)}`;
+
+  function handleClick(e: React.MouseEvent) {
+    // Upcoming matches have no live stream — block navigation
+    if (!isLive && !isFinished) {
+      e.preventDefault();
+      return;
+    }
+    // Let middle-click, Ctrl+click, Cmd+click open natively in a new tab
+    if (e.button === 1 || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    onClick();
+  }
+
   return (
-    <div
-      onClick={onClick}
+    <a
+      href={watchUrl}
+      onClick={handleClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
+        textDecoration: 'none', color: 'inherit',
         background: 'var(--surface)',
         border: `1px solid ${hovered ? (isLive ? 'rgba(230,57,70,0.5)' : 'var(--border2)') : 'var(--border)'}`,
-        borderRadius: 'var(--radius)', overflow: 'hidden', cursor: 'pointer',
+        borderRadius: 'var(--radius)', overflow: 'hidden', cursor: (!isLive && !isFinished) ? 'default' : 'pointer',
         transition: 'all 0.2s', position: 'relative',
         transform: hovered ? 'translateY(-2px)' : 'none',
         boxShadow: hovered ? (isLive ? '0 8px 32px rgba(230,57,70,0.12)' : '0 8px 24px rgba(0,0,0,0.3)') : 'none',
@@ -111,42 +128,82 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
           </div>
         )}
 
-        {/* Footer: sources + viewers + ALWAYS-VISIBLE play button */}
+        {/* Footer: sources + viewers + action button */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 'auto' }}>
           <span style={{ fontSize: 'clamp(0.6rem, 0.72vw, 0.78rem)', color: 'var(--text3)' }}>
             {match.sources.length} src
           </span>
 
-          {viewCount == null ? (
-            <ViewerBadge id={match.id} active={isLive} />
-          ) : (
-            <span style={{ fontSize: 'clamp(0.6rem, 0.72vw, 0.78rem)', color: 'var(--text3)' }}>{formatViewCount(viewCount)} watching</span>
+          {/* Viewer count — live matches only */}
+          {isLive && (
+            viewCount == null
+              ? <ViewerBadge id={match.id} active={true} />
+              : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'clamp(0.6rem, 0.72vw, 0.78rem)', color: 'var(--accent)' }}>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', animation: 'pulse 1.4s infinite' }} />
+                  {formatViewCount(viewCount)} watching
+                </span>
           )}
+          {!isLive && <span />}
 
-          {/* Play button — always visible, never hover-only */}
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
-            background: isLive ? 'var(--accent)' : isFinished ? 'var(--surface2)' : 'rgba(77,158,247,0.15)',
-            border: `1px solid ${isLive ? 'transparent' : isFinished ? 'var(--border)' : 'rgba(77,158,247,0.3)'}`,
-            borderRadius: 20,
-            padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)',
-            color: isLive ? '#fff' : isFinished ? 'var(--text3)' : 'var(--blue)',
-            fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)',
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}>
-            <Play
-              fill="currentColor"
-              color="currentColor"
-              style={{ width: 'clamp(9px, 1vw, 13px)', height: 'clamp(9px, 1vw, 13px)', marginLeft: 1 }}
-            />
-            {isLive ? 'Watch' : isFinished ? 'Replay' : 'Set Reminder'}
-          </div>
+          {/* Action button — Watch (live only), Replay (finished), or disabled upcoming */}
+          {isLive ? (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
+              background: 'var(--accent)',
+              border: '1px solid transparent',
+              borderRadius: 20,
+              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)',
+              color: '#fff',
+              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}>
+              <Play fill="currentColor" color="currentColor" style={{ width: 'clamp(9px, 1vw, 13px)', height: 'clamp(9px, 1vw, 13px)', marginLeft: 1 }} />
+              Watch
+            </div>
+          ) : isFinished ? (
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
+              background: 'var(--surface2)',
+              border: '1px solid var(--border)',
+              borderRadius: 20,
+              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)',
+              color: 'var(--text3)',
+              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}>
+              <Play fill="currentColor" color="currentColor" style={{ width: 'clamp(9px, 1vw, 13px)', height: 'clamp(9px, 1vw, 13px)', marginLeft: 1 }} />
+              Replay
+            </div>
+          ) : (
+            // Upcoming — not watchable yet, show a non-clickable reminder badge
+            <div
+              onClick={e => e.preventDefault()}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
+                background: 'rgba(77,158,247,0.08)',
+                border: '1px solid rgba(77,158,247,0.2)',
+                borderRadius: 20,
+                padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)',
+                color: 'var(--blue)',
+                fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                opacity: 0.7,
+                pointerEvents: 'none',
+              }}>
+              <Bell style={{ width: 'clamp(9px, 1vw, 13px)', height: 'clamp(9px, 1vw, 13px)' }} />
+              Not Live Yet
+            </div>
+          )}
         </div>
       </div>
 
       <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
-    </div>
+    </a>
   );
 }
