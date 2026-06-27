@@ -5,6 +5,7 @@ import {
   ExternalLink, Star, Clock, ChevronDown, ChevronUp, Tv2, Trophy, Film
 } from 'lucide-react';
 import { fetchStreams, fetchAllMatches, badgeUrl, getDaddyStreams, fetchDaddyEvents } from '../api';
+import MatchCard from '../components/MatchCard';
 import ViewerBadge from '../components/ViewerBadge';
 import AdBanner from '../components/AdBanner';
 import type { EnrichedMatch, Stream } from '../types';
@@ -30,6 +31,7 @@ export default function Watch() {
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showStreamList, setShowStreamList] = useState(true);
+  const [liveMatches, setLiveMatches] = useState<EnrichedMatch[]>([]);
   const playerWrapRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -79,6 +81,19 @@ export default function Watch() {
     if (!match) return;
     loadStreams(match);
   }, [match]);
+
+  // Load other live matches in background for the bottom rail
+  useEffect(() => {
+    async function loadLive() {
+      try {
+        const [streamed, daddy] = await Promise.all([fetchAllMatches(), fetchDaddyEvents()]);
+        const all = [...streamed, ...daddy.filter(d => !streamed.find(s => s.title.toLowerCase() === d.title.toLowerCase()))];
+        const live = all.filter(m => m.status === 'live' && m.id !== matchId);
+        setLiveMatches(live);
+      } catch { /* noop */ }
+    }
+    loadLive();
+  }, [matchId]);
 
   async function loadStreams(m: EnrichedMatch) {
     setLoadingStreams(true);
@@ -341,6 +356,40 @@ export default function Watch() {
         <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8 }}>
           <AdBanner size="rectangle" />
         </div>
+
+        {/* Other live matches */}
+        {liveMatches.length > 0 && (
+          <div style={{ paddingTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', animation: 'pulse 1.2s infinite', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'Bebas Neue', fontSize: '1.1rem', letterSpacing: '0.06em' }}>
+                Also Live Now
+              </span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text3)', marginLeft: 2 }}>
+                {liveMatches.length} match{liveMatches.length !== 1 ? 'es' : ''}
+              </span>
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+              gap: 'clamp(10px, 1.2vw, 18px)',
+            }}>
+              {liveMatches.slice(0, 12).map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={m}
+                  onClick={() => {
+                    const key = `match_${m.id}`;
+                    const val = JSON.stringify(m);
+                    sessionStorage.setItem(key, val);
+                    try { localStorage.setItem(key, val); } catch { /* noop */ }
+                    navigate(`/watch/${encodeURIComponent(m.id)}`);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <style>{`

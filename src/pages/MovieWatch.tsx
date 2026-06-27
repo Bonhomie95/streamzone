@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Star, ChevronDown, ChevronUp, ExternalLink,
-  Wifi, WifiOff, Tv2, ChevronRight,
+  Wifi, WifiOff, Tv2, ChevronRight, Search,
   AlertTriangle, CheckCircle, Loader, RefreshCw, Trophy, Film
 } from 'lucide-react';
-import { fetchMovieDetails, fetchSimilar, getEmbedSources } from '../api';
+import { fetchMovieDetails, fetchSimilar, getEmbedSources, searchMovies } from '../api';
 import ViewerBadge from '../components/ViewerBadge';
 import { useWatchProgress, withTimestamp, formatDuration, loadProgress } from '../hooks/useWatchProgress';
 import AdBanner from '../components/AdBanner';
@@ -55,7 +55,7 @@ export default function MovieWatch() {
   const [iframeError, setIframeError] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [selectedEpisode, setSelectedEpisode] = useState(1);
-  const [showEpisodes, setShowEpisodes] = useState(false);
+  const [showEpisodes, setShowEpisodes] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showResumeBanner, setShowResumeBanner] = useState(false);
   const [resumeElapsed, setResumeElapsed] = useState(0);
@@ -372,39 +372,94 @@ export default function MovieWatch() {
         {/* ── TV Episode selector ── */}
         {mediaType === 'tv' && movie.seasons && movie.seasons.length > 0 && (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-            <button onClick={() => setShowEpisodes(v => !v)} style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '12px 16px', background: 'none', border: 'none', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600,
+            {/* Header */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', borderBottom: '1px solid var(--border)',
+              background: 'var(--surface2)',
             }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Tv2 size={15} color="var(--accent)" />
-                Now Watching: S{selectedSeason} · E{selectedEpisode}
-              </span>
-              {showEpisodes ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-            </button>
+                <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>Episodes</span>
+                <span style={{
+                  background: 'var(--accent)', color: '#fff', borderRadius: 6,
+                  padding: '1px 8px', fontSize: '0.68rem', fontWeight: 700,
+                }}>S{selectedSeason} · E{selectedEpisode}</span>
+              </div>
+              <button onClick={() => setShowEpisodes(v => !v)} style={{
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '4px 10px', color: 'var(--text2)',
+                fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                {showEpisodes ? <><ChevronUp size={12} /> Hide</> : <><ChevronDown size={12} /> Show</>}
+              </button>
+            </div>
+
             {showEpisodes && (
-              <div style={{ borderTop: '1px solid var(--border)', padding: 14 }}>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                  {movie.seasons.map(s => (
-                    <button key={s.season} onClick={() => setSelectedSeason(s.season)} style={{
-                      padding: '5px 12px', borderRadius: 7, border: '1px solid',
-                      borderColor: selectedSeason === s.season ? 'var(--accent)' : 'var(--border)',
-                      background: selectedSeason === s.season ? 'var(--accent-dim)' : 'transparent',
-                      color: selectedSeason === s.season ? 'var(--accent)' : 'var(--text2)',
-                      fontSize: '0.78rem', fontWeight: 500,
-                    }}>S{s.season}</button>
-                  ))}
+              <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* Season tabs — scrollable horizontal row */}
+                <div>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Season</div>
+                  <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+                    {movie.seasons.map(s => (
+                      <button
+                        key={s.season}
+                        onClick={() => setSelectedSeason(s.season)}
+                        style={{
+                          flexShrink: 0,
+                          padding: '7px 16px', borderRadius: 8, border: '1px solid',
+                          borderColor: selectedSeason === s.season ? 'var(--accent)' : 'var(--border)',
+                          background: selectedSeason === s.season ? 'var(--accent)' : 'var(--surface2)',
+                          color: selectedSeason === s.season ? '#fff' : 'var(--text2)',
+                          fontSize: '0.8rem', fontWeight: selectedSeason === s.season ? 700 : 400,
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        S{s.season}
+                        <span style={{ display: 'block', fontSize: '0.6rem', opacity: 0.7, marginTop: 1 }}>
+                          {s.episodes} ep
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {Array.from({ length: movie.seasons.find(s => s.season === selectedSeason)?.episodes ?? 0 }, (_, i) => i + 1).map(ep => (
-                    <button key={ep} onClick={() => switchToEpisode(selectedSeason, ep)} style={{
-                      width: 38, height: 38, borderRadius: 7, border: '1px solid',
-                      borderColor: selectedEpisode === ep ? 'var(--accent)' : 'var(--border)',
-                      background: selectedEpisode === ep ? 'var(--accent-dim)' : 'var(--surface2)',
-                      color: selectedEpisode === ep ? 'var(--accent)' : 'var(--text2)',
-                      fontSize: '0.78rem', fontWeight: 500,
-                    }}>{ep}</button>
-                  ))}
+
+                {/* Episode grid */}
+                <div>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Episode</div>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))',
+                    gap: 6,
+                    maxHeight: 200,
+                    overflowY: 'auto',
+                    paddingRight: 2,
+                  }}>
+                    {Array.from(
+                      { length: movie.seasons.find(s => s.season === selectedSeason)?.episodes ?? 0 },
+                      (_, i) => i + 1
+                    ).map(ep => {
+                      const isActive = selectedSeason === selectedSeason && selectedEpisode === ep;
+                      return (
+                        <button
+                          key={ep}
+                          onClick={() => switchToEpisode(selectedSeason, ep)}
+                          style={{
+                            padding: '9px 4px', borderRadius: 7, border: '1px solid',
+                            borderColor: isActive ? 'var(--accent)' : 'var(--border)',
+                            background: isActive ? 'var(--accent)' : 'var(--surface2)',
+                            color: isActive ? '#fff' : 'var(--text2)',
+                            fontSize: '0.82rem', fontWeight: isActive ? 700 : 400,
+                            textAlign: 'center', transition: 'all 0.12s',
+                          }}
+                          onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.borderColor = 'var(--border2)'; }}
+                          onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
+                        >
+                          {ep}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -647,6 +702,42 @@ export default function MovieWatch() {
 
 function WatchTopBar() {
   const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<import('../types').Movie[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showDrop, setShowDrop] = useState(false);
+  const searchRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  function handleSearch(q: string) {
+    setQuery(q);
+    clearTimeout(searchRef.current);
+    if (!q.trim()) { setResults([]); setShowDrop(false); return; }
+    setSearching(true);
+    setShowDrop(true);
+    searchRef.current = setTimeout(async () => {
+      const res = await searchMovies(q);
+      setResults(res.slice(0, 6));
+      setSearching(false);
+    }, 380);
+  }
+
+  function pick(m: import('../types').Movie) {
+    setQuery('');
+    setResults([]);
+    setShowDrop(false);
+    navigate(`/movies/watch/${m.mediaType}/${m.tmdbId}`);
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setShowDrop(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   return (
     <div className="watch-topbar" style={{
       display: 'flex', alignItems: 'center', gap: 'clamp(8px, 1vw, 18px)',
@@ -659,17 +750,78 @@ function WatchTopBar() {
         display: 'flex', alignItems: 'center', gap: 7,
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 8, padding: '6px 12px', color: 'var(--text2)', fontSize: '0.82rem', fontWeight: 500,
+        flexShrink: 0,
       }}>
         <ArrowLeft size={14} /> Back
       </button>
-      <button onClick={() => navigate('/')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0 }}>
+      <button onClick={() => navigate('/')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, flexShrink: 0 }}>
         <div style={{ background: 'var(--accent)', borderRadius: 7, padding: 5, display: 'flex' }}>
           <Tv2 size={15} color="#fff" />
         </div>
-        <span style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.2rem, 1.8vw, 2.2rem)', letterSpacing: '0.08em', color: 'var(--text)' }}>
+        <span className="desktop-only" style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.2rem, 1.8vw, 2.2rem)', letterSpacing: '0.08em', color: 'var(--text)' }}>
           STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
         </span>
       </button>
+
+      {/* Search bar */}
+      <div ref={wrapRef} style={{ flex: 1, maxWidth: 360, position: 'relative' }}>
+        <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)', pointerEvents: 'none' }} />
+        <input
+          value={query}
+          onChange={e => handleSearch(e.target.value)}
+          onFocus={() => { if (results.length > 0) setShowDrop(true); }}
+          placeholder="Search movies & series…"
+          style={{
+            width: '100%', background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 8, padding: '7px 10px 7px 30px',
+            color: 'var(--text)', fontSize: '0.8rem', outline: 'none',
+          }}
+          onFocus={e => (e.currentTarget.style.borderColor = 'var(--border2)')}
+          onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+        />
+        {/* Dropdown results */}
+        {showDrop && (
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
+            background: 'var(--surface)', border: '1px solid var(--border2)',
+            borderRadius: 10, overflow: 'hidden', zIndex: 200,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          }}>
+            {searching ? (
+              <div style={{ padding: '14px', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text3)' }}>Searching…</div>
+            ) : results.length === 0 ? (
+              <div style={{ padding: '14px', textAlign: 'center', fontSize: '0.78rem', color: 'var(--text3)' }}>No results</div>
+            ) : results.map(m => (
+              <button key={m.tmdbId} onClick={() => pick(m)} style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--border)',
+                background: 'transparent', color: 'var(--text)', textAlign: 'left', cursor: 'pointer',
+              }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                {m.poster
+                  ? <img src={m.poster} alt={m.title} style={{ width: 32, height: 46, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+                  : <div style={{ width: 32, height: 46, background: 'var(--surface2)', borderRadius: 4, flexShrink: 0 }} />
+                }
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text3)', marginTop: 2, display: 'flex', gap: 6 }}>
+                    <span>{m.year}</span>
+                    <span style={{ background: m.mediaType === 'tv' ? 'var(--blue)' : 'var(--surface2)', borderRadius: 4, padding: '0 5px', fontSize: '0.62rem', fontWeight: 700, color: m.mediaType === 'tv' ? '#fff' : 'var(--text3)' }}>
+                      {m.mediaType === 'tv' ? 'TV' : 'MOVIE'}
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--gold)' }}>
+                      <Star size={9} fill="var(--gold)" />{m.rating}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <WatchModeTabs active="movies" />
     </div>
   );
