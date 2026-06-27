@@ -13,7 +13,6 @@ import type { StatusFilter } from '../components/StatusTabs';
 
 export default function Home() {
   const navigate = useNavigate();
-  // apiSports only used for display names — NOT for IDs or filtering
   const [apiSports, setApiSports] = useState<Sport[]>([]);
   const [allMatches, setAllMatches] = useState<EnrichedMatch[]>([]);
   const [selectedSport, setSelectedSport] = useState('all');
@@ -39,9 +38,12 @@ export default function Home() {
 
     if (gen !== fetchGenRef.current) return;
 
-    // Deduplicate DaddyLive against streamed by title (both lowercased)
-    const streamedTitles = new Set(streamed.map(m => m.title.toLowerCase()));
-    const uniqueDaddy = daddy.filter(d => !streamedTitles.has(d.title.toLowerCase()));
+    // Deduplicate DaddyLive against streamed by normalised title.
+    function normTitle(t: string) {
+      return t.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    const streamedTitles = new Set(streamed.map(m => normTitle(m.title)));
+    const uniqueDaddy = daddy.filter(d => !streamedTitles.has(normTitle(d.title)));
     const merged = [...streamed, ...uniqueDaddy];
 
     setAllMatches(merged);
@@ -63,38 +65,37 @@ export default function Home() {
   }
 
   function handleSportSelect(sportId: string) {
-    setSelectedSport(sportId);  // sportId already comes from our own derived list, so it's already a clean category string
+    setSelectedSport(sportId);
     setStatusFilter('all');
     setSearchQuery('');
   }
 
-  // ─── Derive sports list from actual match categories ─────────────
-  // This guarantees the sport IDs in the sidebar EXACTLY match m.category values.
-  // We do NOT use the sports API for IDs — only for display names if available.
+  // ─── Build sidebar sport list directly from match.category values ──────────
+  // These are the EXACT same strings shown on each MatchCard (with capitalize).
+  // The sidebar button IDs equal these strings — so filter comparison is always exact.
   const sportsFromMatches = useMemo<Sport[]>(() => {
-    // Build a map from category string → count
     const countMap: Record<string, number> = {};
     for (const m of allMatches) {
-      const cat = m.category; // already lowercased by normaliseMatch
+      // Use the raw category exactly as it arrives — same value shown on the card
+      const cat = m.category;
       if (cat) countMap[cat] = (countMap[cat] || 0) + 1;
     }
 
-    // Build Sport[] using the category string as id
-    // Try to find a display name from the API sports list (match by id or loose substring)
+    // Try to get a display name from the sports API (optional cosmetic improvement)
     const apiNameMap: Record<string, string> = {};
     for (const s of apiSports) {
       apiNameMap[s.id.toLowerCase()] = s.name;
     }
 
     return Object.keys(countMap)
-      .sort((a, b) => countMap[b] - countMap[a]) // sort by count desc
+      .sort((a, b) => countMap[b] - countMap[a])
       .map(cat => ({
-        id: cat,  // this IS the category string — no mismatch possible
+        id: cat,  // MUST equal m.category exactly — this is the filter key
         name: apiNameMap[cat] ?? (cat.charAt(0).toUpperCase() + cat.slice(1)),
       }));
   }, [allMatches, apiSports]);
 
-  // ─── All filtering is purely client-side ─────────────────────────
+  // ─── Filter: compare m.category === selectedSport (exact, same strings) ────
   const filteredMatches = useMemo(() => {
     let result = allMatches;
 
@@ -118,7 +119,7 @@ export default function Home() {
     return result;
   }, [allMatches, selectedSport, statusFilter, searchQuery]);
 
-  // Status counts reflect only the currently selected sport
+  // Status counts scoped to the current sport selection
   const statusCounts = useMemo(() => {
     const base = selectedSport === 'all'
       ? allMatches
@@ -130,7 +131,7 @@ export default function Home() {
     };
   }, [allMatches, selectedSport]);
 
-  // Sidebar counts: how many matches per category
+  // Sidebar badge counts
   const sportCounts = useMemo(() => {
     const counts: Record<string, number> = { all: allMatches.length };
     for (const m of allMatches) {

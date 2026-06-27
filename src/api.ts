@@ -47,34 +47,42 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
       }>
     >(`${DADDY_BASE}/api/events`);
 
-    const matches: EnrichedMatch[] = [];
+    // Map keyed by id — collapses duplicates across days.
+    // If the same event appears as both upcoming and live, live wins.
+    const matchMap = new Map<string, EnrichedMatch & { _daddyUrls: string[] }>();
+
     for (const day of days) {
       for (const [category, events] of Object.entries(day.categories)) {
         for (const ev of events) {
           const isLive = ev.time?.toLowerCase() === "live";
-          // Parse "Sport : Team A vs Team B" title format
+
+          // Always use the API category key — structured, consistent per event group.
+          const sportCategory = category.toLowerCase().trim();
+
+          // Strip any "Sport : " prefix from the display title
           const colonIdx = ev.event.indexOf(":");
-          const sport =
-            colonIdx > -1 ? ev.event.slice(0, colonIdx).trim() : category;
-          const title =
+          const matchTitle =
             colonIdx > -1 ? ev.event.slice(colonIdx + 1).trim() : ev.event;
-          const vsIdx = title.toLowerCase().indexOf(" vs ");
+
+          const vsIdx = matchTitle.toLowerCase().indexOf(" vs ");
           const teams =
             vsIdx > -1
               ? {
-                  home: { name: title.slice(0, vsIdx).trim(), badge: "" },
-                  away: { name: title.slice(vsIdx + 4).trim(), badge: "" },
+                  home: { name: matchTitle.slice(0, vsIdx).trim(), badge: "" },
+                  away: { name: matchTitle.slice(vsIdx + 4).trim(), badge: "" },
                 }
               : undefined;
 
-          // Use channel_id as unique key — encode slashes so they don't break /watch/:matchId routing
-          const rawId = ev.channels[0]?.channel_id ?? ev.event;
+          // Key = channel_id + title. channel_id alone repeats across days;
+          // title alone can be generic ("Multiview"). Both together is unique.
+          const channelId = ev.channels[0]?.channel_id ?? "";
+          const rawId = channelId ? `${channelId}_${matchTitle}` : ev.event;
           const id = `daddy_${encodeURIComponent(rawId)}`;
 
-          matches.push({
+          const entry = {
             id,
-            title: ev.event,
-            category: sport.toLowerCase(),
+            title: matchTitle,
+            category: sportCategory,
             date: isLive ? Date.now() - 1 : Date.now() + 3600_000,
             popular: false,
             teams,
@@ -82,14 +90,18 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
               source: "daddy",
               id: ch.channel_id,
             })),
-            status: isLive ? "live" : "upcoming",
-            // Store embed URLs directly on the match for quick access
+            status: (isLive ? "live" : "upcoming") as "live" | "upcoming",
             _daddyUrls: ev.channels.map((ch) => ch.url),
-          } as EnrichedMatch & { _daddyUrls: string[] });
+          };
+
+          const existing = matchMap.get(id);
+          if (!existing || (isLive && existing.status !== "live")) {
+            matchMap.set(id, entry);
+          }
         }
       }
     }
-    return matches;
+    return Array.from(matchMap.values()) as (EnrichedMatch & { _daddyUrls: string[] })[];
   } catch {
     return [];
   }
