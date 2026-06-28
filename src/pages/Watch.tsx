@@ -998,16 +998,11 @@ function TopBar({ onBack }: { onBack: () => void }) {
           flexShrink: 0,
         }}
       >
-        <div
-          style={{
-            background: "var(--accent)",
-            borderRadius: 7,
-            padding: "5px",
-            display: "flex",
-          }}
-        >
-          <Tv2 size={15} color="#fff" />
-        </div>
+        <img
+          src="/logo.png"
+          alt="StreamZone"
+          style={{ height: 34, width: 34, objectFit: "contain", borderRadius: 8 }}
+        />
         <span
           style={{
             fontFamily: "Bebas Neue",

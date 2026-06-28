@@ -761,7 +761,7 @@ function WatchTopBar() {
       </button>
       <button onClick={() => navigate('/')} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, flexShrink: 0 }}>
         <div style={{ background: 'var(--accent)', borderRadius: 7, padding: 5, display: 'flex' }}>
-          <Tv2 size={15} color="#fff" />
+          <img src="/logo.png" alt="StreamZone" style={{ height: 24, width: 24, objectFit: 'contain', borderRadius: 6 }} />
         </div>
         <span className="desktop-only" style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.2rem, 1.8vw, 2.2rem)', letterSpacing: '0.08em', color: 'var(--text)' }}>
           STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
