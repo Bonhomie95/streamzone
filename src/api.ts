@@ -14,6 +14,31 @@ const SPORTS_BASE = "https://streamed.pk/api";
 const DADDY_BASE = "https://daddylive.eu";
 const API_TIMEOUT = 10_000;
 
+// Parse DaddyLive day + time into a UTC timestamp.
+// day.day = "2025-06-28", ev.time = "14:30" or "2:30 PM" or "Live".
+function parseDaddyDate(dayStr: string, timeStr: string): number {
+  if (!dayStr || !timeStr || timeStr.toLowerCase() === "live") return Date.now() - 1;
+  try {
+    let t = timeStr.trim();
+    const ampm = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampm) {
+      let h = parseInt(ampm[1]);
+      const m = parseInt(ampm[2]);
+      const period = ampm[3].toUpperCase();
+      if (period === "PM" && h !== 12) h += 12;
+      if (period === "AM" && h === 12) h = 0;
+      t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+    // Try UTC first, then local if UTC parse fails
+    const tsUtc = new Date(`${dayStr}T${t}:00Z`).getTime();
+    if (!isNaN(tsUtc)) return tsUtc;
+    const tsLocal = new Date(`${dayStr}T${t}:00`).getTime();
+    return isNaN(tsLocal) ? Date.now() + 3600_000 : tsLocal;
+  } catch {
+    return Date.now() + 3600_000;
+  }
+}
+
 async function fetchJson<T>(url: string, timeout = API_TIMEOUT): Promise<T> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeout);
@@ -83,7 +108,7 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
             id,
             title: matchTitle,
             category: sportCategory,
-            date: isLive ? Date.now() - 1 : Date.now() + 3600_000,
+            date: parseDaddyDate(day.day, ev.time ?? ""),
             popular: false,
             teams,
             sources: ev.channels.map((ch) => ({
@@ -164,8 +189,23 @@ export async function fetchSports(): Promise<Sport[]> {
 }
 
 export async function fetchAllMatches(): Promise<EnrichedMatch[]> {
-  const data = await fetchJson<unknown>(`${SPORTS_BASE}/matches/all`);
-  return (Array.isArray(data) ? data : []).map(normaliseMatch);
+  // /matches/all only returns live matches.
+  // /matches/popular includes upcoming and finished events.
+  // Fetch both in parallel and merge, deduplicating by id.
+  const [live, popular] = await Promise.all([
+    fetchJson<unknown>(`${SPORTS_BASE}/matches/all`).catch(() => []),
+    fetchJson<unknown>(`${SPORTS_BASE}/matches/popular`).catch(() => []),
+  ]);
+  const seen = new Set<string>();
+  const merged: EnrichedMatch[] = [];
+  for (const raw of [...(Array.isArray(live) ? live : []), ...(Array.isArray(popular) ? popular : [])]) {
+    const m = normaliseMatch(raw);
+    if (!seen.has(m.id)) {
+      seen.add(m.id);
+      merged.push(m);
+    }
+  }
+  return merged;
 }
 
 export async function fetchMatchesBySport(

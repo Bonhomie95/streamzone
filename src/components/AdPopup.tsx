@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 /**
  * AdPopup — injects the effectivecpmnetwork popunder script.
@@ -6,11 +6,11 @@ import { useEffect, useRef } from 'react';
  * Mount on home pages only (sports + movie home).
  */
 
-const POPUP_KEY = 'sz_popup_last';
+const POPUP_KEY = "sz_popup_last";
 const INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
 
 function isLocalhost() {
-  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
 
 function shouldShowPopup(): boolean {
@@ -24,7 +24,11 @@ function shouldShowPopup(): boolean {
 }
 
 function markPopupShown() {
-  try { localStorage.setItem(POPUP_KEY, String(Date.now())); } catch { /* noop */ }
+  try {
+    localStorage.setItem(POPUP_KEY, String(Date.now()));
+  } catch {
+    /* noop */
+  }
 }
 
 export default function AdPopup() {
@@ -38,10 +42,11 @@ export default function AdPopup() {
     injected.current = true;
     markPopupShown();
 
-    const script = document.createElement('script');
-    script.src = 'https://pl30098045.effectivecpmnetwork.com/fc/41/1b/fc411baca5757b1efcca0bec6e2446f1.js';
+    const script = document.createElement("script");
+    script.src =
+      "https://pl30098045.effectivecpmnetwork.com/fc/41/1b/fc411baca5757b1efcca0bec6e2446f1.js";
     script.async = true;
-    script.setAttribute('data-cfasync', 'false');
+    script.setAttribute("data-cfasync", "false");
     document.body.appendChild(script);
   }, []);
 

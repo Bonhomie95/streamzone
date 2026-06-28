@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Clock, Star, Play } from 'lucide-react';
 import type { EnrichedMatch } from '../types';
 import ViewerBadge from './ViewerBadge';
@@ -19,19 +19,50 @@ function formatDate(ms: number) {
   return isToday ? `Today ${time}` : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
 }
 
+function useCountdown(targetMs: number) {
+  const [diff, setDiff] = useState(() => targetMs - Date.now());
+  useEffect(() => {
+    if (diff <= 0) return;
+    const id = setInterval(() => {
+      const remaining = targetMs - Date.now();
+      setDiff(remaining);
+      if (remaining <= 0) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [targetMs]);
+  return diff;
+}
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return 'Starting soon';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 48) {
+    const days = Math.floor(h / 24);
+    return `in ${days}d`;
+  }
+  if (h > 0) return `in ${h}h ${m}m`;
+  if (m > 0) return `in ${m}m ${s}s`;
+  return `in ${s}s`;
+}
+
 export default function MatchCard({ match, onClick, viewCount }: MatchCardProps) {
   const [hovered, setHovered] = useState(false);
   const isLive = match.status === 'live';
   const isFinished = match.status === 'finished';
+  const isUpcoming = !isLive && !isFinished;
   const hasTeams = match.teams?.home && match.teams?.away;
   const homeBadge = match.teams?.home?.badge ? badgeUrl(match.teams.home.badge) : '';
   const awayBadge = match.teams?.away?.badge ? badgeUrl(match.teams.away.badge) : '';
+  const countdown = useCountdown(isUpcoming ? match.date : 0);
 
   // Build the watch URL so we can support open-in-new-tab natively
   const watchUrl = `/watch/${encodeURIComponent(match.id)}`;
 
   function handleClick(e: React.MouseEvent) {
-    // Let middle-click, Ctrl+click, Cmd+click open natively in a new tab
+    // Let middle-click / Ctrl+click / Cmd+click open natively in new tab
     if (e.button === 1 || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     onClick();
@@ -74,7 +105,7 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
               </span>
             ) : isFinished ? (
               <span style={{ background: 'var(--surface2)', borderRadius: 10, padding: 'clamp(2px, 0.3vw, 4px) clamp(6px, 0.8vw, 10px)', fontSize: 'clamp(0.6rem, 0.75vw, 0.78rem)', fontWeight: 600, color: 'var(--text3)' }}>FT</span>
-            ) : (
+            ) : isUpcoming ? (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 background: 'rgba(77,158,247,0.1)', border: '1px solid rgba(77,158,247,0.2)',
@@ -82,9 +113,9 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
                 fontSize: 'clamp(0.6rem, 0.75vw, 0.78rem)', fontWeight: 600, color: 'var(--blue)',
               }}>
                 <Clock size={9} />
-                {formatDate(match.date)}
+                {countdown > 0 ? formatCountdown(countdown) : formatDate(match.date)}
               </span>
-            )}
+            ) : null}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {match.popular && <Star size={11} color="var(--gold)" fill="var(--gold)" />}
@@ -174,7 +205,6 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
               Replay
             </div>
           ) : (
-            // Upcoming — streams may already be available, let user try
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
               background: 'rgba(77,158,247,0.12)',

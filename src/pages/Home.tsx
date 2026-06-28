@@ -31,23 +31,24 @@ export default function Home() {
     const gen = ++fetchGenRef.current;
     setLoading(true);
 
-    const [streamed, daddy] = await Promise.all([
-      fetchAllMatches().catch(() => [] as EnrichedMatch[]),
-      fetchDaddyEvents().catch(() => [] as EnrichedMatch[]),
-    ]);
+    // Phase 1: load streamed.pk first — render as soon as it's ready
+    const streamed = await fetchAllMatches().catch(() => [] as EnrichedMatch[]);
+    if (gen !== fetchGenRef.current) return;
+    setAllMatches(streamed);
+    setLoading(false);
 
+    // Phase 2: load DaddyLive silently in background, merge in
+    const daddy = await fetchDaddyEvents().catch(() => [] as EnrichedMatch[]);
     if (gen !== fetchGenRef.current) return;
 
-    // Deduplicate DaddyLive against streamed by normalised title.
     function normTitle(t: string) {
       return t.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
     }
-    const streamedTitles = new Set(streamed.map(m => normTitle(m.title)));
-    const uniqueDaddy = daddy.filter(d => !streamedTitles.has(normTitle(d.title)));
-    const merged = [...streamed, ...uniqueDaddy];
-
-    setAllMatches(merged);
-    setLoading(false);
+    const streamedKeys = new Set(streamed.map(m => `${normTitle(m.title)}::${m.status}`));
+    const uniqueDaddy = daddy.filter(d => !streamedKeys.has(`${normTitle(d.title)}::${d.status}`));
+    if (uniqueDaddy.length > 0) {
+      setAllMatches([...streamed, ...uniqueDaddy]);
+    }
   }
 
   async function handleRefresh() {

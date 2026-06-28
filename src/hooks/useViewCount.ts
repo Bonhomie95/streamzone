@@ -1,19 +1,7 @@
-/**
- * useViewCount
- *
- * Increments the view count for a content item when called,
- * and polls for the current count every 30 seconds.
- *
- * Works for both sports (matchId) and movies (tmdbId).
- *
- * Backend: POST /views/:id  → increment + return new count
- *          GET  /views/:id  → current count
- *          GET  /views?ids=a,b,c → bulk counts for cards
- */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 
-const API = (import.meta.env.VITE_API_BASE ?? '');
+const API = import.meta.env.VITE_API_BASE ?? "";
 const POLL_INTERVAL = 30_000;
 
 export function useViewCount(id: string | number, autoIncrement = true) {
@@ -26,10 +14,12 @@ export function useViewCount(id: string | number, autoIncrement = true) {
 
     async function increment() {
       try {
-        const res = await fetch(`${API}/views/${strId}`, { method: 'POST' });
+        const res = await fetch(`${API}/views/${strId}`, { method: "POST" });
         const data = await res.json();
         setCount(data.count);
-      } catch { /* noop — server may not be running locally */ }
+      } catch {
+        /* noop — server may not be running locally */
+      }
     }
 
     async function poll() {
@@ -37,7 +27,9 @@ export function useViewCount(id: string | number, autoIncrement = true) {
         const res = await fetch(`${API}/views/${strId}`);
         const data = await res.json();
         setCount(data.count);
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     }
 
     // Increment once when component mounts (user started watching)
@@ -64,10 +56,14 @@ export function formatViewCount(n: number): string {
 }
 
 /** Bulk-fetch counts for a list of IDs (for home page cards) */
-export async function fetchBulkViewCounts(ids: (string | number)[]): Promise<Record<string, number>> {
+export async function fetchBulkViewCounts(
+  ids: (string | number)[],
+): Promise<Record<string, number>> {
   if (ids.length === 0) return {};
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_BASE ?? ''}/views?ids=${ids.join(',')}`);
+    const res = await fetch(
+      `${import.meta.env.VITE_API_BASE ?? ""}/views?ids=${ids.join(",")}`,
+    );
     return await res.json();
   } catch {
     return {};

@@ -1,8 +1,8 @@
-import { Routes, Route } from 'react-router-dom';
-import Home from './pages/Home';
-import Watch from './pages/Watch';
-import MovieHome from './pages/MovieHome';
-import MovieWatch from './pages/MovieWatch';
+import { Routes, Route } from "react-router-dom";
+import Home from "./pages/Home";
+import Watch from "./pages/Watch";
+import MovieHome from "./pages/MovieHome";
+import MovieWatch from "./pages/MovieWatch";
 
 export default function App() {
   return (

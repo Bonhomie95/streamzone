@@ -37,7 +37,9 @@ function formatDate(ms: number) {
 
 export default function Watch() {
   const { matchId: rawMatchId } = useParams<{ matchId: string }>();
-  const matchId = rawMatchId ? decodeURIComponent(rawMatchId) : undefined;
+  // React Router decodes URL params once automatically — no manual decode needed.
+  // A second decodeURIComponent would break IDs that contain encoded chars (e.g. daddy_ IDs).
+  const matchId = rawMatchId;
   const navigate = useNavigate();
 
   const [match, setMatch] = useState<EnrichedMatch | null>(null);
@@ -115,13 +117,9 @@ export default function Watch() {
     load();
   }, [matchId]);
 
-  // Load streams only for live matches — upcoming/finished have no active streams
+  // Load streams for all matches — sources may exist for upcoming/finished too
   useEffect(() => {
     if (!match) return;
-    if (match.status !== 'live') {
-      setLoadingStreams(false);
-      return;
-    }
     loadStreams(match);
   }, [match]);
 

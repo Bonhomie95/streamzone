@@ -2,6 +2,45 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 
+// ─── Simple in-memory rate limiter ───────────────────────────────
+// No extra package needed — tracks requests per IP per window.
+// Limits: /api proxy = 60 req/min, /views = 120 req/min (cheaper).
+const rateLimitWindows = new Map(); // key -> { count, resetAt }
+
+function rateLimit(key, maxPerMinute) {
+  const now = Date.now();
+  const windowMs = 60_000;
+  const entry = rateLimitWindows.get(key);
+  if (!entry || now > entry.resetAt) {
+    rateLimitWindows.set(key, { count: 1, resetAt: now + windowMs });
+    return false; // not limited
+  }
+  entry.count++;
+  if (entry.count > maxPerMinute) return true; // limited
+  return false;
+}
+
+// Prune stale entries every 5 minutes to avoid memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of rateLimitWindows) {
+    if (now > val.resetAt) rateLimitWindows.delete(key);
+  }
+}, 5 * 60_000);
+
+function apiRateLimit(maxPerMinute = 60) {
+  return (req, res, next) => {
+    const ip = req.headers["x-forwarded-for"]?.split(",")[0].trim()
+              ?? req.socket?.remoteAddress
+              ?? "unknown";
+    const key = `${ip}:${req.path}`;
+    if (rateLimit(key, maxPerMinute)) {
+      return res.status(429).json({ error: "TOO_MANY_REQUESTS", retryAfterSeconds: 60 });
+    }
+    next();
+  };
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -145,7 +184,7 @@ async function getBulkViews(ids) {
 }
 
 // POST /views/:id — increment when user starts watching
-app.post("/views/:id", async (req, res) => {
+app.post("/views/:id", apiRateLimit(30), async (req, res) => {
   try {
     const count = await incrementView(req.params.id);
     res.json({ id: req.params.id, count });
@@ -176,7 +215,7 @@ app.get("/views", async (req, res) => {
 });
 
 // Debug endpoint — call /api/debug?type=matches&sport=football to see raw upstream response
-app.get("/api/debug", async (req, res) => {
+app.get("/api/debug", apiRateLimit(30), async (req, res) => {
   const key = getActiveKey();
   if (!key) return res.status(429).json({ error: "ALL_KEYS_EXHAUSTED" });
 
@@ -202,7 +241,7 @@ app.get("/api/debug", async (req, res) => {
   }
 });
 
-app.get("/api", async (req, res) => {
+app.get("/api", apiRateLimit(60), async (req, res) => {
   const key = getActiveKey();
   if (!key) {
     const midnight = new Date(
@@ -300,7 +339,7 @@ const EMBED_PROXY_ALLOWLIST = [
   "multiembed.mov",
 ];
 
-app.get("/embed-proxy", async (req, res) => {
+app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
   const raw = req.query.url;
   if (!raw || typeof raw !== "string") {
     return res.status(400).json({ error: "Missing url param" });

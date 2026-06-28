@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import type { MediaType } from '../types';
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { MediaType } from "../types";
 
 const RESUME_OFFSET = 10;
 const SAVE_INTERVAL = 5_000;
-const STORAGE_PREFIX = 'sz_progress_';
+const STORAGE_PREFIX = "sz_progress_";
 const MAX_ENTRIES = 50;
 
 export interface ProgressEntry {
@@ -18,7 +18,12 @@ export interface ProgressEntry {
   tmdbId: number;
 }
 
-function storageKey(type: MediaType, tmdbId: number, season?: number, episode?: number) {
+function storageKey(
+  type: MediaType,
+  tmdbId: number,
+  season?: number,
+  episode?: number,
+) {
   return season !== undefined
     ? `${STORAGE_PREFIX}${type}_${tmdbId}_s${season}e${episode}`
     : `${STORAGE_PREFIX}${type}_${tmdbId}`;
@@ -26,19 +31,36 @@ function storageKey(type: MediaType, tmdbId: number, season?: number, episode?: 
 
 export function saveProgress(entry: ProgressEntry) {
   try {
-    localStorage.setItem(storageKey(entry.mediaType, entry.tmdbId, entry.season, entry.episode), JSON.stringify(entry));
+    localStorage.setItem(
+      storageKey(entry.mediaType, entry.tmdbId, entry.season, entry.episode),
+      JSON.stringify(entry),
+    );
     pruneOldEntries();
-  } catch { /* storage full */ }
+  } catch {
+    /* storage full */
+  }
 }
 
-export function loadProgress(type: MediaType, tmdbId: number, season?: number, episode?: number): ProgressEntry | null {
+export function loadProgress(
+  type: MediaType,
+  tmdbId: number,
+  season?: number,
+  episode?: number,
+): ProgressEntry | null {
   try {
     const raw = localStorage.getItem(storageKey(type, tmdbId, season, episode));
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-export function clearProgress(type: MediaType, tmdbId: number, season?: number, episode?: number) {
+export function clearProgress(
+  type: MediaType,
+  tmdbId: number,
+  season?: number,
+  episode?: number,
+) {
   localStorage.removeItem(storageKey(type, tmdbId, season, episode));
 }
 
@@ -52,14 +74,18 @@ export function getAllProgress(): ProgressEntry[] {
         if (raw) entries.push(JSON.parse(raw));
       }
     }
-  } catch { /* noop */ }
+  } catch {
+    /* noop */
+  }
   return entries.sort((a, b) => b.savedAt - a.savedAt);
 }
 
 function pruneOldEntries() {
   const all = getAllProgress();
   if (all.length <= MAX_ENTRIES) return;
-  all.slice(MAX_ENTRIES).forEach(e => clearProgress(e.mediaType, e.tmdbId, e.season, e.episode));
+  all
+    .slice(MAX_ENTRIES)
+    .forEach((e) => clearProgress(e.mediaType, e.tmdbId, e.season, e.episode));
 }
 
 export function withTimestamp(url: string, seconds: number): string {
@@ -67,10 +93,10 @@ export function withTimestamp(url: string, seconds: number): string {
   const resumeAt = Math.max(0, seconds - RESUME_OFFSET);
   try {
     const u = new URL(url);
-    u.searchParams.set('t', `${Math.floor(resumeAt)}s`);
+    u.searchParams.set("t", `${Math.floor(resumeAt)}s`);
     return u.toString();
   } catch {
-    const sep = url.includes('?') ? '&' : '?';
+    const sep = url.includes("?") ? "&" : "?";
     return `${url}${sep}t=${Math.floor(resumeAt)}s`;
   }
 }
@@ -96,13 +122,20 @@ interface UseWatchProgressOptions {
 }
 
 export function useWatchProgress({
-  tmdbId, mediaType, season, episode,
-  isPlaying, sourceName, title, poster,
+  tmdbId,
+  mediaType,
+  season,
+  episode,
+  isPlaying,
+  sourceName,
+  title,
+  poster,
 }: UseWatchProgressOptions) {
   const [elapsed, setElapsed] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(
+    undefined,
+  );
   const elapsedRef = useRef(0);
-  
 
   useEffect(() => {
     const saved = loadProgress(mediaType, tmdbId, season, episode);
@@ -115,7 +148,7 @@ export function useWatchProgress({
     clearInterval(intervalRef.current);
     if (!isPlaying) return;
     intervalRef.current = setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== "visible") return;
       elapsedRef.current += 1;
       setElapsed(elapsedRef.current);
     }, 1_000);
@@ -126,20 +159,49 @@ export function useWatchProgress({
     if (!isPlaying) return;
     const t = setInterval(() => {
       if (elapsedRef.current > 10) {
-        saveProgress({ elapsed: elapsedRef.current, source: sourceName, savedAt: Date.now(), season, episode, title, poster, mediaType, tmdbId });
+        saveProgress({
+          elapsed: elapsedRef.current,
+          source: sourceName,
+          savedAt: Date.now(),
+          season,
+          episode,
+          title,
+          poster,
+          mediaType,
+          tmdbId,
+        });
       }
     }, SAVE_INTERVAL);
     return () => clearInterval(t);
-  }, [isPlaying, sourceName, season, episode, tmdbId, mediaType, title, poster]);
+  }, [
+    isPlaying,
+    sourceName,
+    season,
+    episode,
+    tmdbId,
+    mediaType,
+    title,
+    poster,
+  ]);
 
   useEffect(() => {
     const handler = () => {
       if (elapsedRef.current > 10) {
-        saveProgress({ elapsed: elapsedRef.current, source: sourceName, savedAt: Date.now(), season, episode, title, poster, mediaType, tmdbId });
+        saveProgress({
+          elapsed: elapsedRef.current,
+          source: sourceName,
+          savedAt: Date.now(),
+          season,
+          episode,
+          title,
+          poster,
+          mediaType,
+          tmdbId,
+        });
       }
     };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
   }, [sourceName, season, episode, tmdbId, mediaType, title, poster]);
 
   const savedProgress = loadProgress(mediaType, tmdbId, season, episode);
