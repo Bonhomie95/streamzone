@@ -1658,7 +1658,7 @@ function WatchTopBar() {
       >
         <ArrowLeft size={14} /> Back
       </button>
-        <button onClick={() => go('/')} style={{
+        <button onClick={() => ('/')} style={{
           display: 'flex', alignItems: 'center', gap: 8,
           background: 'none', border: 'none', padding: 0, flexShrink: 0,
         }}>
