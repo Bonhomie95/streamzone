@@ -204,29 +204,25 @@ async function fetchStreamedMatches(): Promise<EnrichedMatch[]> {
 export async function fetchAllMatches(
   onFirstLoad?: (matches: EnrichedMatch[]) => void
 ): Promise<EnrichedMatch[]> {
-  let primaryResult: EnrichedMatch[] | null = null;
-  let primarySource: "streamed" | "daddy" | null = null;
   let firstLoadFired = false;
 
-  function fireFirstLoad(matches: EnrichedMatch[], source: "streamed" | "daddy") {
+  function fireFirstLoad(matches: EnrichedMatch[]) {
     if (firstLoadFired) return;
     firstLoadFired = true;
-    primaryResult = matches;
-    primarySource = source;
     onFirstLoad?.(matches);
   }
 
   // Run both in parallel, each notifying when ready
   const streamedPromise = fetchStreamedMatches()
     .then((matches) => {
-      if (matches.length > 0) fireFirstLoad(matches, "streamed");
+      if (matches.length > 0) fireFirstLoad(matches);
       return { source: "streamed" as const, matches };
     })
     .catch(() => ({ source: "streamed" as const, matches: [] as EnrichedMatch[] }));
 
   const daddyPromise = fetchDaddyEvents()
     .then((matches) => {
-      if (matches.length > 0) fireFirstLoad(matches, "daddy");
+      if (matches.length > 0) fireFirstLoad(matches);
       return { source: "daddy" as const, matches };
     })
     .catch(() => ({ source: "daddy" as const, matches: [] as EnrichedMatch[] }));

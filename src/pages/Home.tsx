@@ -7,7 +7,7 @@ import StatusTabs from '../components/StatusTabs';
 import MatchGrid from '../components/MatchGrid';
 import AdBanner from '../components/AdBanner';
 import AdPopup from '../components/AdPopup';
-import { fetchSports, fetchAllMatches, fetchDaddyEvents } from '../api';
+import { fetchSports, fetchAllMatches } from '../api';
 import type { Sport, EnrichedMatch } from '../types';
 import type { StatusFilter } from '../components/StatusTabs';
 

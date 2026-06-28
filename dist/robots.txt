@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /views/
+Disallow: /embed-proxy
+
+Sitemap: https://stream-zone.xyz/sitemap.xml

@@ -1,0 +1,33 @@
+{
+  "name": "StreamZone",
+  "short_name": "StreamZone",
+  "description": "Watch live sports and movies for free",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080b10",
+  "theme_color": "#080b10",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["entertainment", "sports"],
+  "shortcuts": [
+    { "name": "Live Sports", "url": "/", "description": "Watch live sports" },
+    {
+      "name": "Movies",
+      "url": "/movies",
+      "description": "Browse movies and TV shows"
+    }
+  ]
+}
