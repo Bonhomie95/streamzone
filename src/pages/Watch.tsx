@@ -114,13 +114,9 @@ export default function Watch() {
     load();
   }, [matchId]);
 
-  // Load streams only for live matches — upcoming/finished have no active streams
+  // Always attempt to load streams — sources may be available for upcoming/finished matches too
   useEffect(() => {
     if (!match) return;
-    if (match.status !== 'live') {
-      setLoadingStreams(false);
-      return;
-    }
     loadStreams(match);
   }, [match]);
 
@@ -554,10 +550,10 @@ export default function Watch() {
                     <>
                       <Clock size={44} strokeWidth={1.2} />
                       <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>
-                        Match not live yet
+                        No streams available yet
                       </span>
                       <span style={{ fontSize: "0.75rem", color: "var(--text3)", textAlign: "center", maxWidth: 260 }}>
-                        Streams will be available once this match goes live
+                        This match hasn't started — check back closer to kick-off
                       </span>
                     </>
                   ) : (
@@ -982,19 +978,40 @@ function TopBar({ onBack }: { onBack: () => void }) {
       </button>
 
       {/* Logo */}
-        <button onClick={() => go('/')} style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: 'none', border: 'none', padding: 0, flexShrink: 0,
-        }}>
-          <img
-            src="/logo.png"
-            alt="StreamZone"
-            style={{ height: 36, width: 36, objectFit: 'contain', borderRadius: 8 }}
-          />
-          <span style={{ fontFamily: 'Bebas Neue', fontSize: '1.45rem', letterSpacing: '0.08em', color: 'var(--text)' }}>
-            STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
-          </span>
-        </button>
+      <button
+        onClick={() => nav("/")}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            background: "var(--accent)",
+            borderRadius: 7,
+            padding: "5px",
+            display: "flex",
+          }}
+        >
+          <Tv2 size={15} color="#fff" />
+        </div>
+        <span
+          style={{
+            fontFamily: "Bebas Neue",
+            fontSize: "clamp(1.2rem, 1.8vw, 2.2rem)",
+            letterSpacing: "0.08em",
+            color: "var(--text)",
+          }}
+        >
+          STREAM<span style={{ color: "var(--accent)" }}>ZONE</span>
+        </span>
+      </button>
 
       {/* Sports / Movies tabs */}
       <div
