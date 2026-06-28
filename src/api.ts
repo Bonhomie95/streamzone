@@ -14,8 +14,24 @@ const SPORTS_BASE = "https://streamed.pk/api";
 const DADDY_BASE = "https://daddylive.eu";
 const API_TIMEOUT = 10_000;
 
-// Parse DaddyLive day + time into a UTC timestamp.
-// day.day = "2025-06-28", ev.time = "14:30" or "2:30 PM" or "Live".
+// ─── TTL cache (60 s) ─────────────────────────────────────────────
+// Prevents redundant fetches on back-navigation and rapid refreshes.
+// Both sources share the same invalidation time because they're always
+// fetched together and merged.
+interface CacheEntry<T> { data: T; expiresAt: number; }
+const _cache = new Map<string, CacheEntry<unknown>>();
+
+function cacheGet<T>(key: string): T | null {
+  const entry = _cache.get(key) as CacheEntry<T> | undefined;
+  if (!entry || Date.now() > entry.expiresAt) return null;
+  return entry.data;
+}
+
+function cacheSet<T>(key: string, data: T, ttlMs = 60_000): void {
+  _cache.set(key, { data, expiresAt: Date.now() + ttlMs });
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────
 function parseDaddyDate(dayStr: string, timeStr: string): number {
   if (!dayStr || !timeStr || timeStr.toLowerCase() === "live") return Date.now() - 1;
   try {
@@ -50,7 +66,15 @@ async function fetchJson<T>(url: string, timeout = API_TIMEOUT): Promise<T> {
   }
 }
 
+function normTitle(t: string) {
+  return t.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// ─── DaddyLive ────────────────────────────────────────────────────
 export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
+  const cached = cacheGet<EnrichedMatch[]>("daddy");
+  if (cached) return cached;
+
   try {
     const days = await fetchJson<
       Array<{
@@ -116,13 +140,18 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
         }
       }
     }
-    return Array.from(matchMap.values()) as (EnrichedMatch & { _daddyUrls: string[] })[];
+    const result = Array.from(matchMap.values()) as (EnrichedMatch & { _daddyUrls: string[] })[];
+    cacheSet("daddy", result);
+    return result;
   } catch {
     return [];
   }
 }
 
-// Returns Stream[] for a daddy match — URLs already known, no extra fetch needed
+// getDaddyStreams extracts the embedded stream URLs from a DaddyLive match.
+// _daddyUrls is preserved through storage because we JSON.stringify the full
+// match object (including non-enumerable lookalike fields) when caching to
+// localStorage/sessionStorage, and JSON.parse restores it on the other side.
 export function getDaddyStreams(match: EnrichedMatch): Stream[] {
   const urls: string[] = (match as any)._daddyUrls ?? [];
   return urls.map((url, i) => ({
@@ -135,6 +164,7 @@ export function getDaddyStreams(match: EnrichedMatch): Stream[] {
   }));
 }
 
+// ─── streamed.pk ──────────────────────────────────────────────────
 function getMatchStatus(dateMs: number): "live" | "upcoming" | "finished" {
   const now = Date.now();
   const diff = dateMs - now;
@@ -171,36 +201,45 @@ function normaliseMatch(m: any): EnrichedMatch {
 }
 
 export async function fetchSports(): Promise<Sport[]> {
+  const cached = cacheGet<Sport[]>("sports");
+  if (cached) return cached;
   try {
-    return await fetchJson<Sport[]>(`${SPORTS_BASE}/sports`);
+    const result = await fetchJson<Sport[]>(`${SPORTS_BASE}/sports`);
+    cacheSet("sports", result, 120_000); // sports list changes rarely
+    return result;
   } catch {
     return [];
   }
 }
 
-// ─── Fetch streamed.pk matches only ───────────────────────────────
 async function fetchStreamedMatches(): Promise<EnrichedMatch[]> {
+  const cached = cacheGet<EnrichedMatch[]>("streamed");
+  if (cached) return cached;
+
   const [live, popular] = await Promise.all([
     fetchJson<unknown>(`${SPORTS_BASE}/matches/all`).catch(() => []),
     fetchJson<unknown>(`${SPORTS_BASE}/matches/popular`).catch(() => []),
   ]);
   const seen = new Set<string>();
   const merged: EnrichedMatch[] = [];
-  for (const raw of [...(Array.isArray(live) ? live : []), ...(Array.isArray(popular) ? popular : [])]) {
+  for (const raw of [
+    ...(Array.isArray(live) ? live : []),
+    ...(Array.isArray(popular) ? popular : []),
+  ]) {
     const m = normaliseMatch(raw);
     if (!seen.has(m.id)) {
       seen.add(m.id);
       merged.push(m);
     }
   }
+  cacheSet("streamed", merged);
   return merged;
 }
 
 // ─── fetchAllMatches: race streamed.pk vs DaddyLive ───────────────
 // Whichever API responds first becomes the "primary" and renders immediately.
-// The slower one then merges in its unique events silently.
-// onFirstLoad(matches) is called as soon as the faster source wins —
-// use it to show content without waiting for both APIs.
+// The slower one then merges in its unique events silently after.
+// onFirstLoad(matches) fires as soon as the faster source wins.
 export async function fetchAllMatches(
   onFirstLoad?: (matches: EnrichedMatch[]) => void
 ): Promise<EnrichedMatch[]> {
@@ -212,7 +251,6 @@ export async function fetchAllMatches(
     onFirstLoad?.(matches);
   }
 
-  // Run both in parallel, each notifying when ready
   const streamedPromise = fetchStreamedMatches()
     .then((matches) => {
       if (matches.length > 0) fireFirstLoad(matches);
@@ -227,31 +265,21 @@ export async function fetchAllMatches(
     })
     .catch(() => ({ source: "daddy" as const, matches: [] as EnrichedMatch[] }));
 
-  // Wait for both to finish, then merge
   const [streamedResult, daddyResult] = await Promise.all([streamedPromise, daddyPromise]);
 
   const streamedMatches = streamedResult.matches;
   const daddyMatches = daddyResult.matches;
 
-  // Deduplicate: streamed.pk is more detailed (has team badges, posters) —
-  // if both have the same event, prefer streamed. DaddyLive fills in exclusives.
-  function normTitle(t: string) {
-    return t.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
-  }
-  const streamedKeys = new Set(streamedMatches.map((m) => `${normTitle(m.title)}::${m.status}`));
+  // Prefer streamed.pk entries (richer data: badges, posters).
+  // DaddyLive fills in events not covered by streamed.pk.
+  const streamedKeys = new Set(
+    streamedMatches.map((m) => `${normTitle(m.title)}::${m.status}`)
+  );
   const uniqueDaddy = daddyMatches.filter(
     (d) => !streamedKeys.has(`${normTitle(d.title)}::${d.status}`)
   );
 
-  const merged = [...streamedMatches, ...uniqueDaddy];
-  return merged;
-}
-
-export async function fetchMatchesBySport(
-  sportId: string,
-): Promise<EnrichedMatch[]> {
-  const data = await fetchJson<unknown>(`${SPORTS_BASE}/matches/${sportId}`);
-  return (Array.isArray(data) ? data : []).map(normaliseMatch);
+  return [...streamedMatches, ...uniqueDaddy];
 }
 
 export async function fetchStreams(
@@ -274,7 +302,7 @@ export function badgeUrl(badge: string) {
   return `https://streamed.pk/api/images/badge/${badge}.webp`;
 }
 
-// ─── Movies API (TMDB + VidSrc) ───────────────────────────────────
+// ─── Movies API (TMDB + embed sources) ────────────────────────────
 const TMDB_KEY =
   import.meta.env.VITE_TMDB_KEY ?? "8265bd1679663a7ea12ac168da84d2e8";
 const TMDB_BASE = "https://api.themoviedb.org/3";

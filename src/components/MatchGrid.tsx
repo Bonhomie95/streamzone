@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import type { EnrichedMatch } from "../types";
 import { fetchBulkViewCounts } from "../hooks/useViewCount";
 import MatchCard from "./MatchCard";
@@ -9,8 +9,10 @@ interface MatchGridProps {
   loading: boolean;
 }
 
-function getCardMinWidth(): string {
-  const w = window.innerWidth;
+// Map viewport width to a card min-width string.
+// Called once on mount and again on window resize via ResizeObserver —
+// not on every render like the old bare function call was.
+function calcMinWidth(w: number): string {
   if (w >= 3840) return "420px";
   if (w >= 2560) return "340px";
   if (w >= 1600) return "280px";
@@ -22,29 +24,43 @@ export default function MatchGrid({
   onMatchClick,
   loading,
 }: MatchGridProps) {
-  // viewCounts is keyed by match ID — only contains live match counts
   const [viewCounts, setViewCounts] = useState<Record<string, number>>({});
-  const minWidth = getCardMinWidth();
+  const [minWidth, setMinWidth] = useState(() => calcMinWidth(window.innerWidth));
+
+  // Update minWidth on resize using ResizeObserver on document.body
+  // so we're not reading window.innerWidth on every render.
+  useEffect(() => {
+    const obs = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? window.innerWidth;
+      setMinWidth(calcMinWidth(w));
+    });
+    obs.observe(document.body);
+    return () => obs.disconnect();
+  }, []);
 
   // Stable dep: only re-fetch when the set of live match IDs actually changes
-  const liveIds = useMemo(
-    () => matches.filter((m) => m.status === "live").map((m) => m.id),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
+  const liveIdString = useMemo(
+    () =>
       matches
         .filter((m) => m.status === "live")
         .map((m) => m.id)
         .join(","),
-    ],
+    [matches],
   );
 
   useEffect(() => {
-    if (liveIds.length === 0) {
+    if (!liveIdString) {
       setViewCounts({});
       return;
     }
-    fetchBulkViewCounts(liveIds).then(setViewCounts);
-  }, [liveIds.join(",")]);
+    const ids = liveIdString.split(",");
+    fetchBulkViewCounts(ids).then(setViewCounts);
+  }, [liveIdString]);
+
+  const handleClick = useCallback(
+    (m: EnrichedMatch) => onMatchClick(m),
+    [onMatchClick],
+  );
 
   const gridStyle = {
     display: "grid",
@@ -108,8 +124,7 @@ export default function MatchGrid({
         <MatchCard
           key={m.id}
           match={m}
-          onClick={() => onMatchClick(m)}
-          // Only pass viewCount for live matches — non-live cards show nothing
+          onClick={() => handleClick(m)}
           viewCount={
             m.status === "live" ? (viewCounts[m.id] ?? null) : undefined
           }

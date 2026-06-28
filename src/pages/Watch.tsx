@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -18,13 +18,15 @@ import {
   fetchAllMatches,
   badgeUrl,
   getDaddyStreams,
-  fetchDaddyEvents,
 } from "../api";
 import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
 import SocialBar from "../components/SocialBar";
 import type { EnrichedMatch, Stream } from "../types";
+
+// Auto-retry delay when an iframe errors — tries the next stream after this many ms
+const AUTO_RETRY_MS = 3_000;
 
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString([], {
@@ -48,14 +50,18 @@ export default function Watch() {
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [iframeError, setIframeError] = useState(false);
+  // Countdown shown when auto-retrying after an iframe error (seconds remaining)
+  const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showStreamList, setShowStreamList] = useState(true);
   const [liveMatches, setLiveMatches] = useState<EnrichedMatch[]>([]);
   const playerWrapRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load match
+  // ─── Load match ──────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       if (!matchId) {
@@ -88,25 +94,14 @@ export default function Watch() {
         }
       }
 
-      // 3. Fetch both sources in parallel and search both
+      // 3. Fetch via race API — fetchAllMatches covers both sources
       try {
-        const isDaddy = matchId.startsWith("daddy_");
-        if (isDaddy) {
-          const all = await fetchDaddyEvents();
-          const found = all.find((m) => m.id === matchId);
-          if (found) {
-            setMatch(found);
-            setLoadingMatch(false);
-            return;
-          }
-        } else {
-          const all = await fetchAllMatches();
-          const found = all.find((m) => m.id === matchId);
-          if (found) {
-            setMatch(found);
-            setLoadingMatch(false);
-            return;
-          }
+        const all = await fetchAllMatches();
+        const found = all.find((m) => m.id === matchId);
+        if (found) {
+          setMatch(found);
+          setLoadingMatch(false);
+          return;
         }
       } catch {
         /* noop */
@@ -117,29 +112,17 @@ export default function Watch() {
     load();
   }, [matchId]);
 
-  // Load streams for all matches — sources may exist for upcoming/finished too
+  // ─── Load streams ─────────────────────────────────────────────────
   useEffect(() => {
     if (!match) return;
     loadStreams(match);
   }, [match]);
 
-  // Load other live matches in background for the bottom rail
+  // ─── Load live rail via the race API (fix: was calling both APIs separately) ──
   useEffect(() => {
     async function loadLive() {
       try {
-        const [streamed, daddy] = await Promise.all([
-          fetchAllMatches(),
-          fetchDaddyEvents(),
-        ]);
-        const all = [
-          ...streamed,
-          ...daddy.filter(
-            (d) =>
-              !streamed.find(
-                (s) => s.title.toLowerCase() === d.title.toLowerCase(),
-              ),
-          ),
-        ];
+        const all = await fetchAllMatches();
         const live = all.filter((m) => m.status === "live" && m.id !== matchId);
         setLiveMatches(live);
       } catch {
@@ -149,15 +132,61 @@ export default function Watch() {
     loadLive();
   }, [matchId]);
 
+  // ─── Keyboard shortcuts: ←/P = prev stream, →/N = next, 1-9 = jump ──
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      // Don't intercept when user is typing in an input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) return;
+
+      if (streams.length === 0 || !activeStream) return;
+
+      const idx = streams.findIndex((s) => s.embedUrl === activeStream.embedUrl);
+
+      if (e.key === "ArrowRight" || e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        const next = streams[(idx + 1) % streams.length];
+        if (next) switchStream(next);
+      } else if (e.key === "ArrowLeft" || e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        const prev = streams[(idx - 1 + streams.length) % streams.length];
+        if (prev) switchStream(prev);
+      } else if (e.key >= "1" && e.key <= "9") {
+        const target = streams[parseInt(e.key) - 1];
+        if (target) switchStream(target);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [streams, activeStream]);
+
   async function loadStreams(m: EnrichedMatch) {
     setLoadingStreams(true);
     setStreams([]);
     setActiveStream(null);
     setIframeError(false);
+    clearRetryTimers();
 
-    // DaddyLive matches have URLs already embedded — no extra fetch needed
+    // DaddyLive: stream URLs are embedded in the match object as _daddyUrls.
+    // They survive localStorage/sessionStorage because JSON.stringify includes
+    // all own enumerable properties — _daddyUrls is set directly on the object,
+    // not on the prototype, so it round-trips correctly.
+    // If the match came from the raw API fallback path and _daddyUrls is missing
+    // (shouldn't happen but defensive), re-fetch DaddyLive to recover them.
     if (m.id.startsWith("daddy_")) {
-      const s = getDaddyStreams(m);
+      let s = getDaddyStreams(m);
+      if (s.length === 0) {
+        // _daddyUrls was lost — re-fetch and find the match
+        try {
+          const all = await fetchAllMatches();
+          const fresh = all.find((x) => x.id === m.id);
+          if (fresh) s = getDaddyStreams(fresh);
+        } catch {
+          /* noop */
+        }
+      }
       setStreams(s);
       if (s.length > 0) setActiveStream(s[0]);
       setLoadingStreams(false);
@@ -174,9 +203,52 @@ export default function Watch() {
   }
 
   function switchStream(s: Stream) {
+    clearRetryTimers();
     setActiveStream(s);
     setIframeError(false);
+    setRetryCountdown(null);
   }
+
+  // ─── Auto-retry on iframe error ───────────────────────────────────
+  // When a stream errors, start a 3-second countdown then auto-advance
+  // to the next available stream. The user can manually skip at any time.
+  function clearRetryTimers() {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    if (retryIntervalRef.current) clearInterval(retryIntervalRef.current);
+    retryTimerRef.current = null;
+    retryIntervalRef.current = null;
+  }
+
+  const handleIframeError = useCallback(() => {
+    setIframeError(true);
+
+    if (!activeStream) return;
+    const currentStreams = streams; // capture at call time
+    const idx = currentStreams.findIndex((s) => s.embedUrl === activeStream.embedUrl);
+    const nextStream = currentStreams[idx + 1] ?? null;
+    if (!nextStream) return; // no more streams to try
+
+    // Start countdown
+    const secs = Math.ceil(AUTO_RETRY_MS / 1000);
+    setRetryCountdown(secs);
+
+    retryIntervalRef.current = setInterval(() => {
+      setRetryCountdown((c) => {
+        if (c === null || c <= 1) {
+          clearInterval(retryIntervalRef.current!);
+          return null;
+        }
+        return c - 1;
+      });
+    }, 1_000);
+
+    retryTimerRef.current = setTimeout(() => {
+      switchStream(nextStream);
+    }, AUTO_RETRY_MS);
+  }, [activeStream, streams]);
+
+  // Clean up timers on unmount
+  useEffect(() => () => clearRetryTimers(), []);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -470,6 +542,15 @@ export default function Watch() {
               LIVE NOW
             </span>
           )}
+          {/* Keyboard hint — desktop only */}
+          {streams.length > 1 && (
+            <span
+              className="desktop-only"
+              style={{ fontSize: "0.68rem", color: "var(--text3)" }}
+            >
+              ← → to switch streams · 1–9 to jump
+            </span>
+          )}
         </div>
 
         {/* Two-column: player left, stream list right */}
@@ -481,7 +562,7 @@ export default function Watch() {
             flexWrap: "wrap",
           }}
         >
-          {/* Player column — flex:1 so it fills ALL remaining width after sidebar */}
+          {/* Player column */}
           <div
             style={{
               flex: "1 1 300px",
@@ -503,7 +584,6 @@ export default function Watch() {
                 border: isFullscreen ? "none" : "1px solid var(--border)",
                 width: "100%",
                 aspectRatio: "16/9",
-                /* Safe fallback — avoids collapsing on TVs where sidebar widths are unpredictable */
                 minHeight: "clamp(200px, 56.25vw, 90vh)",
               }}
             >
@@ -602,8 +682,9 @@ export default function Watch() {
                         marginBottom: 20,
                       }}
                     >
-                      This source prevents embedding. Try another source from
-                      the list, or open directly.
+                      {retryCountdown !== null
+                        ? `Trying next stream in ${retryCountdown}s…`
+                        : "Try another source from the list, or open directly."}
                     </div>
                     <div
                       style={{
@@ -689,7 +770,7 @@ export default function Watch() {
                   }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-                  onError={() => setIframeError(true)}
+                  onError={handleIframeError}
                 />
               ) : null}
             </div>
@@ -883,13 +964,11 @@ export default function Watch() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        /* Default (desktop / TV): sidebar visible, mobile strip hidden */
         .hide-below-md { display: block; }
         .show-below-md { display: none !important; }
         @media (max-width: 768px) {
           .hide-below-md { display: none !important; }
           .show-below-md { display: block !important; }
-          /* Edge-to-edge player on mobile */
           .watch-outer-pad {
             padding-left: 0 !important;
             padding-right: 0 !important;
@@ -898,7 +977,6 @@ export default function Watch() {
           .watch-player-col {
             border-radius: 0 !important;
           }
-          /* Compact match title on mobile */
           .watch-title-row {
             gap: 8px !important;
             padding: 8px 12px 0 !important;
@@ -947,122 +1025,119 @@ function TopBar({ onBack }: { onBack: () => void }) {
     <>
       <SocialBar />
       <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "clamp(8px, 1vw, 18px)",
-        padding: "0 clamp(12px, 2vw, 40px)",
-        height: "var(--header-h)",
-        background: "rgba(8,11,16,0.95)",
-        backdropFilter: "blur(20px)",
-        borderBottom: "1px solid var(--border)",
-        position: "sticky",
-        top: 0,
-        zIndex: 100,
-        flexShrink: 0,
-      }}
-    >
-      {/* Back */}
-      <button
-        onClick={onBack}
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 6,
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          padding: "6px 12px",
-          color: "var(--text2)",
-          fontSize: "0.82rem",
-          fontWeight: 500,
+          gap: "clamp(8px, 1vw, 18px)",
+          padding: "0 clamp(12px, 2vw, 40px)",
+          height: "var(--header-h)",
+          background: "rgba(8,11,16,0.95)",
+          backdropFilter: "blur(20px)",
+          borderBottom: "1px solid var(--border)",
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
           flexShrink: 0,
         }}
       >
-        <ArrowLeft size={14} /> Back
-      </button>
-
-      {/* Logo */}
-      <button
-        onClick={() => nav("/")}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-          flexShrink: 0,
-        }}
-      >
-        <img
-          src="/logo.png"
-          alt="StreamZone"
-          style={{ height: 34, width: 34, objectFit: "contain", borderRadius: 8 }}
-        />
-        <span
+        <button
+          onClick={onBack}
           style={{
-            fontFamily: "Bebas Neue",
-            fontSize: "clamp(1.2rem, 1.8vw, 2.2rem)",
-            letterSpacing: "0.08em",
-            color: "var(--text)",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: "6px 12px",
+            color: "var(--text2)",
+            fontSize: "0.82rem",
+            fontWeight: 500,
+            flexShrink: 0,
           }}
         >
-          STREAM<span style={{ color: "var(--accent)" }}>ZONE</span>
-        </span>
-      </button>
+          <ArrowLeft size={14} /> Back
+        </button>
 
-      {/* Sports / Movies tabs */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 3,
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          padding: 3,
-        }}
-      >
         <button
           onClick={() => nav("/")}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 5,
-            padding: "5px 11px",
-            borderRadius: 7,
+            gap: 8,
+            background: "none",
             border: "none",
-            background: "var(--accent)",
-            color: "#fff",
-            fontSize: "0.78rem",
-            fontWeight: 700,
             cursor: "pointer",
+            padding: 0,
+            flexShrink: 0,
           }}
         >
-          <Trophy size={12} /> Sports
+          <img
+            src="/logo.png"
+            alt="StreamZone"
+            style={{ height: 34, width: 34, objectFit: "contain", borderRadius: 8 }}
+          />
+          <span
+            style={{
+              fontFamily: "Bebas Neue",
+              fontSize: "clamp(1.2rem, 1.8vw, 2.2rem)",
+              letterSpacing: "0.08em",
+              color: "var(--text)",
+            }}
+          >
+            STREAM<span style={{ color: "var(--accent)" }}>ZONE</span>
+          </span>
         </button>
-        <button
-          onClick={() => nav("/movies")}
+
+        <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 5,
-            padding: "5px 11px",
-            borderRadius: 7,
-            border: "none",
-            background: "transparent",
-            color: "var(--text2)",
-            fontSize: "0.78rem",
-            fontWeight: 400,
-            cursor: "pointer",
+            gap: 3,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            padding: 3,
           }}
         >
-          <Film size={12} /> Movies
-        </button>
+          <button
+            onClick={() => nav("/")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "5px 11px",
+              borderRadius: 7,
+              border: "none",
+              background: "var(--accent)",
+              color: "#fff",
+              fontSize: "0.78rem",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            <Trophy size={12} /> Sports
+          </button>
+          <button
+            onClick={() => nav("/movies")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "5px 11px",
+              borderRadius: 7,
+              border: "none",
+              background: "transparent",
+              color: "var(--text2)",
+              fontSize: "0.78rem",
+              fontWeight: 400,
+              cursor: "pointer",
+            }}
+          >
+            <Film size={12} /> Movies
+          </button>
+        </div>
       </div>
-    </div>
     </>
   );
 }
@@ -1309,6 +1384,7 @@ function StreamSidebar({
               }}
             >
               <div
+                className="stream-num-badge"
                 style={{
                   width: 28,
                   height: 28,
@@ -1327,6 +1403,7 @@ function StreamSidebar({
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
+                  className="stream-btn-label"
                   style={{
                     fontSize: "0.82rem",
                     fontWeight: 500,
@@ -1352,6 +1429,7 @@ function StreamSidebar({
                   )}
                 </div>
                 <div
+                  className="stream-btn-sub"
                   style={{
                     fontSize: "0.7rem",
                     color: "var(--text3)",

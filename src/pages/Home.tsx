@@ -33,17 +33,17 @@ export default function Home() {
 
     // Race: whichever of streamed.pk or DaddyLive responds first wins and
     // renders immediately. The slower one merges in silently after.
+    // The gen guard is checked inside onFirstLoad AND after Promise.all so
+    // rapid refreshes cannot flash stale data from a slower in-flight request.
     const merged = await fetchAllMatches((firstMatches) => {
-      // This fires as soon as the faster API responds
       if (gen !== fetchGenRef.current) return;
       setAllMatches(firstMatches);
       setLoading(false);
     });
 
-    // Both APIs are done — commit the full merged result
     if (gen !== fetchGenRef.current) return;
     setAllMatches(merged);
-    setLoading(false); // ensure loading is cleared even if onFirstLoad never fired
+    setLoading(false);
   }
 
   async function handleRefresh() {
@@ -66,19 +66,16 @@ export default function Home() {
     setSearchQuery('');
   }
 
-  // ─── Build sidebar sport list directly from match.category values ──────────
   const sportsFromMatches = useMemo<Sport[]>(() => {
     const countMap: Record<string, number> = {};
     for (const m of allMatches) {
       const cat = m.category;
       if (cat) countMap[cat] = (countMap[cat] || 0) + 1;
     }
-
     const apiNameMap: Record<string, string> = {};
     for (const s of apiSports) {
       apiNameMap[s.id.toLowerCase()] = s.name;
     }
-
     return Object.keys(countMap)
       .sort((a, b) => countMap[b] - countMap[a])
       .map(cat => ({
@@ -87,18 +84,14 @@ export default function Home() {
       }));
   }, [allMatches, apiSports]);
 
-  // ─── Filter ────────────────────────────────────────────────────────────────
   const filteredMatches = useMemo(() => {
     let result = allMatches;
-
     if (selectedSport !== 'all') {
       result = result.filter(m => m.category === selectedSport);
     }
-
     if (statusFilter !== 'all') {
       result = result.filter(m => m.status === statusFilter);
     }
-
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(m =>
@@ -107,7 +100,6 @@ export default function Home() {
         m.teams?.away?.name.toLowerCase().includes(q)
       );
     }
-
     return result;
   }, [allMatches, selectedSport, statusFilter, searchQuery]);
 
