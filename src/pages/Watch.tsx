@@ -23,6 +23,7 @@ import {
 import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
+import SocialBar from "../components/SocialBar";
 import type { EnrichedMatch, Stream } from "../types";
 
 function formatDate(ms: number) {
@@ -114,9 +115,13 @@ export default function Watch() {
     load();
   }, [matchId]);
 
-  // Always attempt to load streams — sources may be available for upcoming/finished matches too
+  // Load streams only for live matches — upcoming/finished have no active streams
   useEffect(() => {
     if (!match) return;
+    if (match.status !== 'live') {
+      setLoadingStreams(false);
+      return;
+    }
     loadStreams(match);
   }, [match]);
 
@@ -550,10 +555,10 @@ export default function Watch() {
                     <>
                       <Clock size={44} strokeWidth={1.2} />
                       <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>
-                        No streams available yet
+                        Match not live yet
                       </span>
                       <span style={{ fontSize: "0.75rem", color: "var(--text3)", textAlign: "center", maxWidth: 260 }}>
-                        This match hasn't started — check back closer to kick-off
+                        Streams will be available once this match goes live
                       </span>
                     </>
                   ) : (
@@ -941,7 +946,9 @@ export default function Watch() {
 function TopBar({ onBack }: { onBack: () => void }) {
   const nav = useNavigate();
   return (
-    <div
+    <>
+      <SocialBar />
+      <div
       style={{
         display: "flex",
         alignItems: "center",
@@ -1063,6 +1070,7 @@ function TopBar({ onBack }: { onBack: () => void }) {
         </button>
       </div>
     </div>
+    </>
   );
 }
 

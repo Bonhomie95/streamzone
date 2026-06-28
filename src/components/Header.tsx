@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, Zap, Film, Trophy } from 'lucide-react';
+import { Tv2, Menu, X, Zap, Film, Trophy } from 'lucide-react';
 import type { Sport } from '../types';
+import SocialBar from './SocialBar';
 
 const SPORT_EMOJIS: Record<string, string> = {
   football: '⚽', basketball: '🏀', tennis: '🎾', hockey: '🏒',
@@ -31,6 +32,7 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
 
   return (
     <>
+      <SocialBar />
       <header className="app-header" style={{
         position: 'sticky', top: 0, zIndex: 100,
         background: 'rgba(8,10,15,0.96)', backdropFilter: 'blur(24px)',
@@ -43,11 +45,9 @@ export default function Header({ liveCount = 0, sports = [], selectedSport = 'al
           display: 'flex', alignItems: 'center', gap: 8,
           background: 'none', border: 'none', padding: 0, flexShrink: 0,
         }}>
-          <img
-            src="/logo.png"
-            alt="StreamZone"
-            style={{ height: 36, width: 36, objectFit: 'contain', borderRadius: 8 }}
-          />
+          <div style={{ background: 'var(--accent)', borderRadius: 7, padding: 5, display: 'flex' }}>
+            <Tv2 size={16} color="#fff" />
+          </div>
           <span style={{ fontFamily: 'Bebas Neue', fontSize: '1.45rem', letterSpacing: '0.08em', color: 'var(--text)' }}>
             STREAM<span style={{ color: 'var(--accent)' }}>ZONE</span>
           </span>
