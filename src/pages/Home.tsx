@@ -1,27 +1,31 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw } from 'lucide-react';
+import { Search, RefreshCw, Heart } from 'lucide-react';
 import Header from '../components/Header';
 import SportsSidebar from '../components/SportsSidebar';
 import StatusTabs from '../components/StatusTabs';
 import MatchGrid from '../components/MatchGrid';
 import AdBanner from '../components/AdBanner';
 import AdPopup from '../components/AdPopup';
-import { fetchSports, fetchAllMatches } from '../api';
 import AddToHomeScreen from '../components/AddToHomeScreen';
+import { fetchSports, fetchAllMatches } from '../api';
+import { useFavouriteTeams, getPreferredSport, recordSportClick } from '../hooks/useFavourites';
 import type { Sport, EnrichedMatch } from '../types';
 import type { StatusFilter } from '../components/StatusTabs';
+
+type SidebarFilter = string | '__favourites__';
 
 export default function Home() {
   const navigate = useNavigate();
   const [apiSports, setApiSports] = useState<Sport[]>([]);
   const [allMatches, setAllMatches] = useState<EnrichedMatch[]>([]);
-  const [selectedSport, setSelectedSport] = useState('all');
+  const [selectedSport, setSelectedSport] = useState<SidebarFilter>(() => getPreferredSport() ?? 'all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const fetchGenRef = useRef(0);
+  const { isFav: isTeamFav } = useFavouriteTeams();
 
   useEffect(() => {
     fetchSports().then(setApiSports).catch(() => {});
@@ -31,17 +35,11 @@ export default function Home() {
   async function loadAllMatches() {
     const gen = ++fetchGenRef.current;
     setLoading(true);
-
-    // Race: whichever of streamed.pk or DaddyLive responds first wins and
-    // renders immediately. The slower one merges in silently after.
-    // The gen guard is checked inside onFirstLoad AND after Promise.all so
-    // rapid refreshes cannot flash stale data from a slower in-flight request.
     const merged = await fetchAllMatches((firstMatches) => {
       if (gen !== fetchGenRef.current) return;
       setAllMatches(firstMatches);
       setLoading(false);
     });
-
     if (gen !== fetchGenRef.current) return;
     setAllMatches(merged);
     setLoading(false);
@@ -61,10 +59,13 @@ export default function Home() {
     navigate(`/watch/${encodeURIComponent(match.id)}`);
   }
 
-  function handleSportSelect(sportId: string) {
+  function handleSportSelect(sportId: SidebarFilter) {
     setSelectedSport(sportId);
     setStatusFilter('all');
     setSearchQuery('');
+    if (sportId !== 'all' && sportId !== '__favourites__') {
+      recordSportClick(sportId); // track preference
+    }
   }
 
   const sportsFromMatches = useMemo<Sport[]>(() => {
@@ -74,25 +75,29 @@ export default function Home() {
       if (cat) countMap[cat] = (countMap[cat] || 0) + 1;
     }
     const apiNameMap: Record<string, string> = {};
-    for (const s of apiSports) {
-      apiNameMap[s.id.toLowerCase()] = s.name;
-    }
+    for (const s of apiSports) apiNameMap[s.id.toLowerCase()] = s.name;
     return Object.keys(countMap)
       .sort((a, b) => countMap[b] - countMap[a])
-      .map(cat => ({
-        id: cat,
-        name: apiNameMap[cat] ?? (cat.charAt(0).toUpperCase() + cat.slice(1)),
-      }));
+      .map(cat => ({ id: cat, name: apiNameMap[cat] ?? (cat.charAt(0).toUpperCase() + cat.slice(1)) }));
   }, [allMatches, apiSports]);
+
+  // Matches that involve a favourited team
+  const favouriteMatches = useMemo(() =>
+    allMatches.filter(m =>
+      (m.teams?.home?.name && isTeamFav(m.teams.home.name)) ||
+      (m.teams?.away?.name && isTeamFav(m.teams.away.name))
+    ),
+    [allMatches, isTeamFav]
+  );
 
   const filteredMatches = useMemo(() => {
     let result = allMatches;
-    if (selectedSport !== 'all') {
+    if (selectedSport === '__favourites__') {
+      result = favouriteMatches;
+    } else if (selectedSport !== 'all') {
       result = result.filter(m => m.category === selectedSport);
     }
-    if (statusFilter !== 'all') {
-      result = result.filter(m => m.status === statusFilter);
-    }
+    if (statusFilter !== 'all') result = result.filter(m => m.status === statusFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(m =>
@@ -102,18 +107,20 @@ export default function Home() {
       );
     }
     return result;
-  }, [allMatches, selectedSport, statusFilter, searchQuery]);
+  }, [allMatches, selectedSport, statusFilter, searchQuery, favouriteMatches]);
 
   const statusCounts = useMemo(() => {
-    const base = selectedSport === 'all'
-      ? allMatches
-      : allMatches.filter(m => m.category === selectedSport);
+    const base = selectedSport === '__favourites__'
+      ? favouriteMatches
+      : selectedSport === 'all'
+        ? allMatches
+        : allMatches.filter(m => m.category === selectedSport);
     return {
       live:     base.filter(m => m.status === 'live').length,
       upcoming: base.filter(m => m.status === 'upcoming').length,
       finished: base.filter(m => m.status === 'finished').length,
     };
-  }, [allMatches, selectedSport]);
+  }, [allMatches, selectedSport, favouriteMatches]);
 
   const sportCounts = useMemo(() => {
     const counts: Record<string, number> = { all: allMatches.length };
@@ -123,8 +130,9 @@ export default function Home() {
     return counts;
   }, [allMatches]);
 
-  const currentSportName = selectedSport === 'all'
-    ? 'All Sports'
+  const currentSportName =
+    selectedSport === '__favourites__' ? 'My Favourites'
+    : selectedSport === 'all' ? 'All Sports'
     : sportsFromMatches.find(s => s.id === selectedSport)?.name ?? selectedSport;
 
   return (
@@ -149,16 +157,19 @@ export default function Home() {
           selected={selectedSport}
           onSelect={handleSportSelect}
           counts={sportCounts}
+          favouriteCount={favouriteMatches.length}
         />
 
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <div className="sports-home-mainbar" style={{ padding: '14px 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <div>
-              <h1 style={{ fontFamily: 'Bebas Neue', fontSize: '1.4rem', letterSpacing: '0.06em', lineHeight: 1 }}>
+              <h1 style={{ fontFamily: 'Bebas Neue', fontSize: '1.4rem', letterSpacing: '0.06em', lineHeight: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                {selectedSport === '__favourites__' && <Heart size={16} fill="var(--accent)" color="var(--accent)" />}
                 {currentSportName}
               </h1>
               <p style={{ fontSize: '0.72rem', color: 'var(--text3)', marginTop: 2 }}>
                 {filteredMatches.length} match{filteredMatches.length !== 1 ? 'es' : ''}
+                {selectedSport === '__favourites__' && favouriteMatches.length === 0 && ' — heart a team on any match card to add it here'}
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -195,9 +206,7 @@ export default function Home() {
       </div>
 
       <style>{`
-        @media (max-width: 768px) {
-          .sports-home-mainbar { align-items: stretch !important; }
-        }
+        @media (max-width: 768px) { .sports-home-mainbar { align-items: stretch !important; } }
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
     </div>

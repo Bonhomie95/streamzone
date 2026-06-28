@@ -26,22 +26,41 @@
       content="Watch live sports and movies for free. Football, basketball, tennis, MMA, Formula 1 and more."
     />
     <meta property="og:url" content="https://stream-zone.xyz" />
-    <meta property="og:image" content="https://stream-zone.xyz/logo.png" />
+    <meta property="og:image" content="https://stream-zone.xyz/og-banner.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
 
-    <!-- Twitter / X Card -->
+    <!-- Twitter / X Card — uncomment when @handle is ready -->
     <!-- <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@streamzonelive" />
     <meta name="twitter:title" content="StreamZone — Live Sports &amp; Movies" />
     <meta name="twitter:description" content="Watch live sports and movies for free. Football, basketball, tennis, MMA, Formula 1 and more." />
-    <meta name="twitter:image" content="https://stream-zone.xyz/logo.png" /> -->
+    <meta name="twitter:image" content="https://stream-zone.xyz/og-banner.png" /> -->
 
     <!-- Favicon & PWA icons -->
     <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/logo.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#080b10" />
+
+    <!-- JSON-LD: WebSite structured data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "StreamZone",
+      "url": "https://stream-zone.xyz",
+      "description": "Watch live sports and movies for free. Football, basketball, tennis, MMA, Formula 1 and more.",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://stream-zone.xyz/?search={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>

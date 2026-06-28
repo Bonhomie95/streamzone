@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Clock, Star, Play } from 'lucide-react';
+import { Clock, Star, Play, Bell, BellOff, Heart } from 'lucide-react';
 import type { EnrichedMatch } from '../types';
 import ViewerBadge from './ViewerBadge';
 import { formatViewCount } from '../hooks/useViewCount';
 import { badgeUrl } from '../api';
+import { useMatchReminder } from '../hooks/useMatchReminder';
+import { useFavouriteTeams } from '../hooks/useFavourites';
+import { showToast } from './Toast';
 
 interface MatchCardProps {
   match: EnrichedMatch;
@@ -39,10 +42,7 @@ function formatCountdown(ms: number): string {
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-  if (h > 48) {
-    const days = Math.floor(h / 24);
-    return `in ${days}d`;
-  }
+  if (h > 48) return `in ${Math.floor(h / 24)}d`;
   if (h > 0) return `in ${h}h ${m}m`;
   if (m > 0) return `in ${m}m ${s}s`;
   return `in ${s}s`;
@@ -58,14 +58,42 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
   const awayBadge = match.teams?.away?.badge ? badgeUrl(match.teams.away.badge) : '';
   const countdown = useCountdown(isUpcoming ? match.date : 0);
 
-  // Build the watch URL so we can support open-in-new-tab natively
+  const { isSet: reminderSet, toggle: toggleReminder } = useMatchReminder(match);
+  const { isFav, toggle: toggleFav } = useFavouriteTeams();
+
+  // A match is "favourited" if either team is in the user's favourites list
+  const matchFaved =
+    (match.teams?.home?.name && isFav(match.teams.home.name)) ||
+    (match.teams?.away?.name && isFav(match.teams.away.name));
+
   const watchUrl = `/watch/${encodeURIComponent(match.id)}`;
 
   function handleClick(e: React.MouseEvent) {
-    // Let middle-click / Ctrl+click / Cmd+click open natively in new tab
     if (e.button === 1 || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     onClick();
+  }
+
+  function handleBell(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleReminder().then(() => {
+      showToast(
+        reminderSet ? 'Reminder cancelled' : 'Reminder set — we\'ll notify you 15 min before',
+        reminderSet ? 'info' : 'success'
+      );
+    });
+  }
+
+  function handleHeart(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Toggle both teams if present, else just the title
+    if (hasTeams) {
+      if (match.teams?.home?.name) toggleFav(match.teams.home.name);
+      if (match.teams?.away?.name) toggleFav(match.teams.away.name);
+      showToast(matchFaved ? 'Removed from favourites' : 'Teams added to favourites', matchFaved ? 'info' : 'success');
+    }
   }
 
   return (
@@ -77,7 +105,7 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
       style={{
         textDecoration: 'none', color: 'inherit',
         background: 'var(--surface)',
-        border: `1px solid ${hovered ? (isLive ? 'rgba(230,57,70,0.5)' : 'var(--border2)') : 'var(--border)'}`,
+        border: `1px solid ${hovered ? (isLive ? 'rgba(230,57,70,0.5)' : 'var(--border2)') : matchFaved ? 'rgba(230,57,70,0.3)' : 'var(--border)'}`,
         borderRadius: 'var(--radius)', overflow: 'hidden', cursor: 'pointer',
         transition: 'all 0.2s', position: 'relative',
         transform: hovered ? 'translateY(-2px)' : 'none',
@@ -90,7 +118,7 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
 
       <div style={{ padding: 'clamp(10px, 1.2vw, 18px) clamp(12px, 1.4vw, 20px)', display: 'flex', flexDirection: 'column', gap: 'clamp(8px, 1vw, 14px)', flex: 1 }}>
 
-        {/* Top row: status badge + category */}
+        {/* Top row: status badge + category + action icons */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             {isLive ? (
@@ -117,7 +145,39 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
               </span>
             ) : null}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+
+          {/* Right side: fav/reminder icons + category */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Bell — only for upcoming matches */}
+            {isUpcoming && (
+              <button
+                onClick={handleBell}
+                title={reminderSet ? 'Cancel reminder' : 'Remind me 15 min before'}
+                style={{
+                  background: 'none', border: 'none', padding: 2, cursor: 'pointer',
+                  color: reminderSet ? 'var(--accent)' : 'var(--text3)',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                {reminderSet
+                  ? <Bell size={13} fill="var(--accent)" />
+                  : <BellOff size={13} />}
+              </button>
+            )}
+            {/* Heart — for matches with teams */}
+            {hasTeams && (
+              <button
+                onClick={handleHeart}
+                title={matchFaved ? 'Remove from favourites' : 'Favourite these teams'}
+                style={{
+                  background: 'none', border: 'none', padding: 2, cursor: 'pointer',
+                  color: matchFaved ? 'var(--accent)' : 'var(--text3)',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <Heart size={13} fill={matchFaved ? 'var(--accent)' : 'none'} />
+              </button>
+            )}
             {match.popular && <Star size={11} color="var(--gold)" fill="var(--gold)" />}
             <span style={{ fontSize: 'clamp(0.6rem, 0.75vw, 0.78rem)', color: 'var(--text3)', textTransform: 'capitalize' }}>{match.category}</span>
           </div>
@@ -160,7 +220,6 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
             {match.sources.length} src
           </span>
 
-          {/* Viewer count — live matches only */}
           {isLive && (
             viewCount == null
               ? <ViewerBadge id={match.id} active={true} />
@@ -171,19 +230,12 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
           )}
           {!isLive && <span />}
 
-          {/* Action button — Watch (live only), Replay (finished), or disabled upcoming */}
           {isLive ? (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
-              background: 'var(--accent)',
-              border: '1px solid transparent',
-              borderRadius: 20,
-              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)',
-              color: '#fff',
-              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)',
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
+              background: 'var(--accent)', border: '1px solid transparent', borderRadius: 20,
+              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)', color: '#fff',
+              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
             }}>
               <Play fill="currentColor" color="currentColor" style={{ width: 'clamp(9px, 1vw, 13px)', height: 'clamp(9px, 1vw, 13px)', marginLeft: 1 }} />
               Watch
@@ -191,15 +243,9 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
           ) : isFinished ? (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
-              background: 'var(--surface2)',
-              border: '1px solid var(--border)',
-              borderRadius: 20,
-              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)',
-              color: 'var(--text3)',
-              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)',
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
+              background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 20,
+              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)', color: 'var(--text3)',
+              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
             }}>
               <Play fill="currentColor" color="currentColor" style={{ width: 'clamp(9px, 1vw, 13px)', height: 'clamp(9px, 1vw, 13px)', marginLeft: 1 }} />
               Replay
@@ -207,15 +253,9 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
           ) : (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 'clamp(4px, 0.5vw, 7px)',
-              background: 'rgba(77,158,247,0.12)',
-              border: '1px solid rgba(77,158,247,0.3)',
-              borderRadius: 20,
-              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)',
-              color: 'var(--blue)',
-              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)',
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
+              background: 'rgba(77,158,247,0.12)', border: '1px solid rgba(77,158,247,0.3)', borderRadius: 20,
+              padding: 'clamp(4px, 0.5vw, 7px) clamp(8px, 1vw, 14px)', color: 'var(--blue)',
+              fontSize: 'clamp(0.62rem, 0.78vw, 0.82rem)', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
             }}>
               <Play fill="currentColor" color="currentColor" style={{ width: 'clamp(9px, 1vw, 13px)', height: 'clamp(9px, 1vw, 13px)', marginLeft: 1 }} />
               Watch

@@ -12,6 +12,8 @@ import {
   Tv2,
   Trophy,
   Film,
+  Share2,
+  Check,
 } from "lucide-react";
 import {
   fetchStreams,
@@ -255,6 +257,73 @@ export default function Watch() {
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
+
+  // ─── Dynamic page title + JSON-LD structured data ─────────────────
+  useEffect(() => {
+    if (!match) return;
+    const teams = match.teams?.home && match.teams?.away
+      ? `${match.teams.home.name} vs ${match.teams.away.name}`
+      : match.title;
+    const statusLabel = match.status === "live" ? " — LIVE" : match.status === "upcoming" ? " — Upcoming" : "";
+    document.title = `${teams}${statusLabel} | StreamZone`;
+
+    // Inject SportsEvent JSON-LD
+    const id = "sz-jsonld-sports";
+    let el = document.getElementById(id) as HTMLScriptElement | null;
+    if (!el) {
+      el = document.createElement("script");
+      el.id = id;
+      el.type = "application/ld+json";
+      document.head.appendChild(el);
+    }
+    el.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "SportsEvent",
+      "name": teams,
+      "description": `Watch ${teams} live on StreamZone`,
+      "startDate": new Date(match.date).toISOString(),
+      "eventStatus": match.status === "live"
+        ? "https://schema.org/EventScheduled"
+        : match.status === "finished"
+          ? "https://schema.org/EventPostponed"
+          : "https://schema.org/EventScheduled",
+      "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
+      "location": { "@type": "VirtualLocation", "url": `https://stream-zone.xyz/watch/${encodeURIComponent(match.id)}` },
+      "organizer": { "@type": "Organization", "name": "StreamZone", "url": "https://stream-zone.xyz" },
+      ...(match.teams?.home && match.teams?.away ? {
+        "homeTeam": { "@type": "SportsTeam", "name": match.teams.home.name },
+        "awayTeam": { "@type": "SportsTeam", "name": match.teams.away.name },
+      } : {}),
+    });
+
+    return () => {
+      document.title = "StreamZone — Live Sports & Movies";
+      document.getElementById(id)?.remove();
+    };
+  }, [match]);
+
+  // ─── Share button ─────────────────────────────────────────────────
+  const [shareCopied, setShareCopied] = useState(false);
+
+  async function handleShare() {
+    const teams = match?.teams?.home && match?.teams?.away
+      ? `${match.teams.home.name} vs ${match.teams.away.name}`
+      : match?.title ?? "Match";
+    const url = window.location.href;
+    const shareData = { title: `${teams} — StreamZone`, url };
+
+    if (navigator.share) {
+      try { await navigator.share(shareData); return; } catch { /* user dismissed */ }
+    }
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch {
+      prompt("Copy this link:", url);
+    }
+  }
 
   const hasTeams = match?.teams?.home && match?.teams?.away;
   const isLive = match?.status === "live";
@@ -551,6 +620,21 @@ export default function Watch() {
               ← → to switch streams · 1–9 to jump
             </span>
           )}
+          {/* Share button */}
+          <button
+            onClick={handleShare}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              background: "var(--surface)", border: "1px solid var(--border)",
+              borderRadius: "var(--radius)", padding: "5px 12px",
+              color: shareCopied ? "var(--green)" : "var(--text2)",
+              fontSize: "0.75rem", fontWeight: 500, cursor: "pointer",
+              marginLeft: "auto",
+            }}
+          >
+            {shareCopied ? <Check size={13} /> : <Share2 size={13} />}
+            {shareCopied ? "Copied!" : "Share"}
+          </button>
         </div>
 
         {/* Two-column: player left, stream list right */}

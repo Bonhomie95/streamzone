@@ -390,6 +390,60 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
   }
 });
 
+// ─── Dynamic sitemap ──────────────────────────────────────────────
+// Fetches live + upcoming matches from streamed.pk and builds a full sitemap.
+// Cached for 10 minutes to avoid hammering the upstream API.
+let _sitemapCache = null;
+let _sitemapCachedAt = 0;
+const SITEMAP_TTL = 10 * 60 * 1000;
+
+app.get("/sitemap.xml", async (req, res) => {
+  res.set("Content-Type", "application/xml; charset=utf-8");
+  res.set("Cache-Control", "public, max-age=600");
+
+  if (_sitemapCache && Date.now() - _sitemapCachedAt < SITEMAP_TTL) {
+    return res.send(_sitemapCache);
+  }
+
+  const staticUrls = [
+    { loc: "https://stream-zone.xyz/",       changefreq: "hourly",  priority: "1.0" },
+    { loc: "https://stream-zone.xyz/movies", changefreq: "daily",   priority: "0.8" },
+  ];
+
+  let matchUrls = [];
+  try {
+    const r = await fetch("https://streamed.pk/api/matches/all", { signal: AbortSignal.timeout(8000) });
+    if (r.ok) {
+      const matches = await r.json();
+      matchUrls = (Array.isArray(matches) ? matches : [])
+        .filter(m => m.status !== "finished")
+        .slice(0, 200)
+        .map(m => ({
+          loc: `https://stream-zone.xyz/watch/${encodeURIComponent(m.id)}`,
+          changefreq: m.status === "inprogress" ? "always" : "hourly",
+          priority: m.status === "inprogress" ? "0.9" : "0.7",
+          lastmod: new Date(m.date).toISOString().split("T")[0],
+        }));
+    }
+  } catch {
+    /* upstream down — serve static-only sitemap */
+  }
+
+  const allUrls = [...staticUrls, ...matchUrls];
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${allUrls.map(u => `  <url>
+    <loc>${u.loc}</loc>
+    <changefreq>${u.changefreq}</changefreq>
+    <priority>${u.priority}</priority>${u.lastmod ? `\n    <lastmod>${u.lastmod}</lastmod>` : ""}
+  </url>`).join("\n")}
+</urlset>`;
+
+  _sitemapCache = xml;
+  _sitemapCachedAt = Date.now();
+  return res.send(xml);
+});
+
 // ─── Serve React frontend (Option C — all on Railway) ─────────────
 import { fileURLToPath } from "url";
 import path from "path";

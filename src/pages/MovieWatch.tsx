@@ -146,6 +146,14 @@ export default function MovieWatch() {
     load();
   }, [tmdbId, type]);
 
+  // Dynamic page title
+  useEffect(() => {
+    if (!movie) return;
+    const suffix = mediaType === "tv" ? ` S${selectedSeason}E${selectedEpisode}` : movie.year ? ` (${movie.year})` : "";
+    document.title = `${movie.title}${suffix} | StreamZone`;
+    return () => { document.title = "StreamZone — Live Sports & Movies"; };
+  }, [movie, mediaType, selectedSeason, selectedEpisode]);
+
   useEffect(() => {
     if (probeStatus !== "found") return;
     // Use setTimeout to avoid synchronous setState inside effect body
