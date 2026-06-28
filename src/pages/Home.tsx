@@ -8,6 +8,7 @@ import MatchGrid from '../components/MatchGrid';
 import AdBanner from '../components/AdBanner';
 import AdPopup from '../components/AdPopup';
 import { fetchSports, fetchAllMatches } from '../api';
+import AddToHomeScreen from '../components/AddToHomeScreen';
 import type { Sport, EnrichedMatch } from '../types';
 import type { StatusFilter } from '../components/StatusTabs';
 
@@ -129,6 +130,7 @@ export default function Home() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AdPopup />
+      <AddToHomeScreen />
       <Header
         liveCount={statusCounts.live}
         sports={sportsFromMatches}
