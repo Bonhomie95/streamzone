@@ -31,24 +31,19 @@ export default function Home() {
     const gen = ++fetchGenRef.current;
     setLoading(true);
 
-    // Phase 1: load streamed.pk first — render as soon as it's ready
-    const streamed = await fetchAllMatches().catch(() => [] as EnrichedMatch[]);
-    if (gen !== fetchGenRef.current) return;
-    setAllMatches(streamed);
-    setLoading(false);
+    // Race: whichever of streamed.pk or DaddyLive responds first wins and
+    // renders immediately. The slower one merges in silently after.
+    const merged = await fetchAllMatches((firstMatches) => {
+      // This fires as soon as the faster API responds
+      if (gen !== fetchGenRef.current) return;
+      setAllMatches(firstMatches);
+      setLoading(false);
+    });
 
-    // Phase 2: load DaddyLive silently in background, merge in
-    const daddy = await fetchDaddyEvents().catch(() => [] as EnrichedMatch[]);
+    // Both APIs are done — commit the full merged result
     if (gen !== fetchGenRef.current) return;
-
-    function normTitle(t: string) {
-      return t.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
-    }
-    const streamedKeys = new Set(streamed.map(m => `${normTitle(m.title)}::${m.status}`));
-    const uniqueDaddy = daddy.filter(d => !streamedKeys.has(`${normTitle(d.title)}::${d.status}`));
-    if (uniqueDaddy.length > 0) {
-      setAllMatches([...streamed, ...uniqueDaddy]);
-    }
+    setAllMatches(merged);
+    setLoading(false); // ensure loading is cleared even if onFirstLoad never fired
   }
 
   async function handleRefresh() {
@@ -72,17 +67,13 @@ export default function Home() {
   }
 
   // ─── Build sidebar sport list directly from match.category values ──────────
-  // These are the EXACT same strings shown on each MatchCard (with capitalize).
-  // The sidebar button IDs equal these strings — so filter comparison is always exact.
   const sportsFromMatches = useMemo<Sport[]>(() => {
     const countMap: Record<string, number> = {};
     for (const m of allMatches) {
-      // Use the raw category exactly as it arrives — same value shown on the card
       const cat = m.category;
       if (cat) countMap[cat] = (countMap[cat] || 0) + 1;
     }
 
-    // Try to get a display name from the sports API (optional cosmetic improvement)
     const apiNameMap: Record<string, string> = {};
     for (const s of apiSports) {
       apiNameMap[s.id.toLowerCase()] = s.name;
@@ -91,12 +82,12 @@ export default function Home() {
     return Object.keys(countMap)
       .sort((a, b) => countMap[b] - countMap[a])
       .map(cat => ({
-        id: cat,  // MUST equal m.category exactly — this is the filter key
+        id: cat,
         name: apiNameMap[cat] ?? (cat.charAt(0).toUpperCase() + cat.slice(1)),
       }));
   }, [allMatches, apiSports]);
 
-  // ─── Filter: compare m.category === selectedSport (exact, same strings) ────
+  // ─── Filter ────────────────────────────────────────────────────────────────
   const filteredMatches = useMemo(() => {
     let result = allMatches;
 
@@ -120,7 +111,6 @@ export default function Home() {
     return result;
   }, [allMatches, selectedSport, statusFilter, searchQuery]);
 
-  // Status counts scoped to the current sport selection
   const statusCounts = useMemo(() => {
     const base = selectedSport === 'all'
       ? allMatches
@@ -132,7 +122,6 @@ export default function Home() {
     };
   }, [allMatches, selectedSport]);
 
-  // Sidebar badge counts
   const sportCounts = useMemo(() => {
     const counts: Record<string, number> = { all: allMatches.length };
     for (const m of allMatches) {
