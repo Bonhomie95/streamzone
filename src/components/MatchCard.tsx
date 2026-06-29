@@ -63,8 +63,8 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
   const { isFav, toggle: toggleFav } = useFavouriteTeams();
 
   const matchFaved =
-    (match.teams?.home?.name && isFav(match.teams.home.name)) ||
-    (match.teams?.away?.name && isFav(match.teams.away.name));
+    (match.teams?.home?.name && isFav(match.teams.home.name, match.category)) ||
+    (match.teams?.away?.name && isFav(match.teams.away.name, match.category));
 
   const watchUrl = `/watch/${encodeURIComponent(match.id)}`;
 
@@ -93,8 +93,8 @@ export default function MatchCard({ match, onClick, viewCount }: MatchCardProps)
     if (!hasTeams) return;
     const home = match.teams?.home?.name ?? '';
     const away = match.teams?.away?.name ?? '';
-    if (home) toggleFav(home);
-    if (away) toggleFav(away);
+    if (home) toggleFav(home, match.category);
+    if (away) toggleFav(away, match.category);
     const names = [home, away].filter(Boolean).join(' and ');
     showToast(
       matchFaved

@@ -98,8 +98,8 @@ export default function Home() {
 
   const favouriteMatches = useMemo(() =>
     allMatches.filter(m =>
-      (m.teams?.home?.name && isTeamFav(m.teams.home.name)) ||
-      (m.teams?.away?.name && isTeamFav(m.teams.away.name))
+      (m.teams?.home?.name && isTeamFav(m.teams.home.name, m.category)) ||
+      (m.teams?.away?.name && isTeamFav(m.teams.away.name, m.category))
     ),
     [allMatches, isTeamFav]
   );

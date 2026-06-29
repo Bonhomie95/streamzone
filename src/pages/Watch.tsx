@@ -24,7 +24,6 @@ import {
 import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
-import SocialBar from "../components/SocialBar";
 import type { EnrichedMatch, Stream } from "../types";
 
 // Auto-retry delay when an iframe errors — tries the next stream after this many ms
@@ -1108,24 +1107,22 @@ export default function Watch() {
 function TopBar({ onBack }: { onBack: () => void }) {
   const nav = useNavigate();
   return (
-    <>
-      <SocialBar />
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "clamp(8px, 1vw, 18px)",
-          padding: "0 clamp(12px, 2vw, 40px)",
-          height: "var(--header-h)",
-          background: "rgba(8,11,16,0.95)",
-          backdropFilter: "blur(20px)",
-          borderBottom: "1px solid var(--border)",
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-          flexShrink: 0,
-        }}
-      >
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "clamp(8px, 1vw, 18px)",
+        padding: "0 clamp(12px, 2vw, 40px)",
+        height: "var(--header-h)",
+        background: "rgba(8,11,16,0.95)",
+        backdropFilter: "blur(20px)",
+        borderBottom: "1px solid var(--border)",
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+        flexShrink: 0,
+      }}
+    >
         <button
           onClick={onBack}
           style={{
@@ -1224,7 +1221,6 @@ function TopBar({ onBack }: { onBack: () => void }) {
           </button>
         </div>
       </div>
-    </>
   );
 }
 

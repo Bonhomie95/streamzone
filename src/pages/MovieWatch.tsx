@@ -32,7 +32,6 @@ import {
   loadProgress,
 } from "../hooks/useWatchProgress";
 import AdBanner from "../components/AdBanner";
-import SocialBar from "../components/SocialBar";
 import type { Movie, MediaType, Stream } from "../types";
 
 type ProbeStatus = "idle" | "probing" | "found" | "all_failed";
@@ -1633,16 +1632,14 @@ function WatchTopBar() {
   }, []);
 
   return (
-    <>
-      <SocialBar />
-      <div
-        className="watch-topbar"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "clamp(8px, 1vw, 18px)",
-          padding: "0 clamp(12px, 2vw, 40px)",
-          height: "var(--header-h)",
+    <div
+      className="watch-topbar"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "clamp(8px, 1vw, 18px)",
+        padding: "0 clamp(12px, 2vw, 40px)",
+        height: "var(--header-h)",
           background: "rgba(8,10,15,0.96)",
           backdropFilter: "blur(20px)",
           borderBottom: "1px solid var(--border)",
@@ -1897,7 +1894,6 @@ function WatchTopBar() {
 
         <WatchModeTabs active="movies" />
       </div>
-    </>
   );
 }
 
