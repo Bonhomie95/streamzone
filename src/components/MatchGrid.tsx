@@ -7,11 +7,10 @@ interface MatchGridProps {
   matches: EnrichedMatch[];
   onMatchClick: (m: EnrichedMatch) => void;
   loading: boolean;
+  activeSport?: string;
+  onClearFilter?: () => void;
 }
 
-// Map viewport width to a card min-width string.
-// Called once on mount and again on window resize via ResizeObserver —
-// not on every render like the old bare function call was.
 function calcMinWidth(w: number): string {
   if (w >= 3840) return "420px";
   if (w >= 2560) return "340px";
@@ -19,16 +18,10 @@ function calcMinWidth(w: number): string {
   return "240px";
 }
 
-export default function MatchGrid({
-  matches,
-  onMatchClick,
-  loading,
-}: MatchGridProps) {
+export default function MatchGrid({ matches, onMatchClick, loading, activeSport, onClearFilter }: MatchGridProps) {
   const [viewCounts, setViewCounts] = useState<Record<string, number>>({});
   const [minWidth, setMinWidth] = useState(() => calcMinWidth(window.innerWidth));
 
-  // Update minWidth on resize using ResizeObserver on document.body
-  // so we're not reading window.innerWidth on every render.
   useEffect(() => {
     const obs = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? window.innerWidth;
@@ -38,51 +31,30 @@ export default function MatchGrid({
     return () => obs.disconnect();
   }, []);
 
-  // Stable dep: only re-fetch when the set of live match IDs actually changes
   const liveIdString = useMemo(
-    () =>
-      matches
-        .filter((m) => m.status === "live")
-        .map((m) => m.id)
-        .join(","),
-    [matches],
+    () => matches.filter((m) => m.status === "live").map((m) => m.id).join(","),
+    [matches]
   );
 
   useEffect(() => {
-    if (!liveIdString) {
-      setViewCounts({});
-      return;
-    }
-    const ids = liveIdString.split(",");
-    fetchBulkViewCounts(ids).then(setViewCounts);
+    if (!liveIdString) { setViewCounts({}); return; }
+    fetchBulkViewCounts(liveIdString.split(",")).then(setViewCounts);
   }, [liveIdString]);
 
-  const handleClick = useCallback(
-    (m: EnrichedMatch) => onMatchClick(m),
-    [onMatchClick],
-  );
+  const handleClick = useCallback((m: EnrichedMatch) => onMatchClick(m), [onMatchClick]);
 
   const gridStyle = {
     display: "grid",
     gridTemplateColumns: `repeat(auto-fill, minmax(${minWidth}, 1fr))`,
-    gap: "clamp(10px, 1.2vw, 20px)",
-    padding: "clamp(12px, 1.5vw, 28px) clamp(14px, 2vw, 36px)",
+    gap: "clamp(10px,1.2vw,20px)",
+    padding: "clamp(12px,1.5vw,28px) clamp(14px,2vw,36px)",
   };
 
   if (loading) {
     return (
       <div style={gridStyle}>
         {Array.from({ length: 8 }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              height: 155,
-              borderRadius: "var(--radius)",
-              background: "var(--surface)",
-              animation: "shimmer 1.5s infinite",
-              animationDelay: `${i * 0.07}s`,
-            }}
-          />
+          <div key={i} style={{ height: 155, borderRadius: "var(--radius)", background: "var(--surface)", animation: "shimmer 1.5s infinite", animationDelay: `${i * 0.07}s` }} />
         ))}
         <style>{`@keyframes shimmer { 0%,100%{opacity:.4} 50%{opacity:.8} }`}</style>
       </div>
@@ -90,30 +62,41 @@ export default function MatchGrid({
   }
 
   if (matches.length === 0) {
+    const isFavsFilter = activeSport === "__favourites__";
+    const isAllFilter = !activeSport || activeSport === "all";
+    const sportName = (!isAllFilter && !isFavsFilter) ? (activeSport!.charAt(0).toUpperCase() + activeSport!.slice(1)) : null;
+
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 10,
-          padding: "64px 20px",
-          color: "var(--text3)",
-        }}
-      >
-        <svg
-          width="44"
-          height="44"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.2"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M8 12h8M12 8v8" />
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: "64px 20px", color: "var(--text3)", textAlign: "center" }}>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+          {isFavsFilter
+            ? <><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></>
+            : <><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></>}
         </svg>
-        <span style={{ fontSize: "0.88rem" }}>No matches found</span>
+        <div>
+          <p style={{ fontSize: "0.92rem", fontWeight: 600, color: "var(--text2)", marginBottom: 6 }}>
+            {isFavsFilter
+              ? "No favourited teams yet"
+              : sportName
+                ? `No ${sportName} matches right now`
+                : "No matches found"}
+          </p>
+          <p style={{ fontSize: "0.78rem", color: "var(--text3)", lineHeight: 1.5, maxWidth: 280, margin: "0 auto" }}>
+            {isFavsFilter
+              ? "Hover any match card and tap the heart icon to follow teams — their matches will appear here"
+              : sportName
+                ? `${sportName} streams will appear here when events go live`
+                : "Try a different search or filter"}
+          </p>
+        </div>
+        {(sportName || isFavsFilter) && onClearFilter && (
+          <button
+            onClick={onClearFilter}
+            style={{ marginTop: 4, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "8px 18px", color: "var(--text2)", fontSize: "0.8rem", cursor: "pointer" }}
+          >
+            Browse all sports
+          </button>
+        )}
       </div>
     );
   }
@@ -125,9 +108,7 @@ export default function MatchGrid({
           key={m.id}
           match={m}
           onClick={() => handleClick(m)}
-          viewCount={
-            m.status === "live" ? (viewCounts[m.id] ?? null) : undefined
-          }
+          viewCount={m.status === "live" ? (viewCounts[m.id] ?? null) : undefined}
         />
       ))}
     </div>

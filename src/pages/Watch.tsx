@@ -418,6 +418,7 @@ export default function Watch() {
         display: "flex",
         flexDirection: "column",
         background: "var(--bg)",
+        animation: "watchFadeIn 0.25s ease",
       }}
     >
       <TopBar onBack={() => navigate("/")} />
@@ -1048,6 +1049,7 @@ export default function Watch() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes watchFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         .hide-below-md { display: block; }
         .show-below-md { display: none !important; }
         @media (max-width: 768px) {
@@ -1352,38 +1354,10 @@ function StreamSidebar({
 }) {
   if (loading) {
     return (
-      <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius)",
-          padding: 16,
-        }}
-      >
-        <div
-          style={{
-            fontSize: "0.72rem",
-            fontWeight: 700,
-            color: "var(--text3)",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            marginBottom: 12,
-          }}
-        >
-          Stream Sources
-        </div>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 16 }}>
+        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>Stream Sources</div>
         {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              height: 46,
-              borderRadius: 8,
-              background: "var(--surface2)",
-              marginBottom: 6,
-              animation: "shimmer 1.4s infinite",
-              animationDelay: `${i * 0.1}s`,
-            }}
-          />
+          <div key={i} style={{ height: 46, borderRadius: 8, background: "var(--surface2)", marginBottom: 6, animation: "shimmer 1.4s infinite", animationDelay: `${i * 0.1}s` }} />
         ))}
         <style>{`@keyframes shimmer { 0%,100%{opacity:.4} 50%{opacity:.8} }`}</style>
       </div>
@@ -1392,155 +1366,74 @@ function StreamSidebar({
 
   if (streams.length === 0) {
     return (
-      <div
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius)",
-          padding: 24,
-          textAlign: "center",
-          color: "var(--text3)",
-        }}
-      >
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 24, textAlign: "center", color: "var(--text3)" }}>
         <WifiOff size={28} strokeWidth={1.2} style={{ margin: "0 auto 8px" }} />
         <div style={{ fontSize: "0.82rem" }}>No streams yet</div>
       </div>
     );
   }
 
+  // Group streams by source name
+  const groups: Record<string, Stream[]> = {};
+  for (const s of streams) {
+    const key = s.source || "Other";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  }
+  const groupEntries = Object.entries(groups);
+  const globalIdx = (s: Stream) => streams.findIndex((x) => x.embedUrl === s.embedUrl);
+
   return (
-    <div
-      style={{
-        background: "var(--surface)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          padding: "12px 14px 8px",
-          fontSize: "0.68rem",
-          fontWeight: 700,
-          color: "var(--text3)",
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}>
+      <div style={{ padding: "12px 14px 8px", fontSize: "0.68rem", fontWeight: 700, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>
         {streams.length} Stream{streams.length !== 1 ? "s" : ""} Available
       </div>
-      <div
-        style={{ maxHeight: "clamp(320px, 55vh, 700px)", overflowY: "auto" }}
-      >
-        {streams.map((s, i) => {
-          const isActive = activeStream?.embedUrl === s.embedUrl;
-          return (
-            <button
-              key={i}
-              onClick={() => onSwitch(s)}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "11px 14px",
-                border: "none",
-                textAlign: "left",
-                background: isActive ? "rgba(230,57,70,0.08)" : "transparent",
-                borderLeft: isActive
-                  ? "2px solid var(--accent)"
-                  : "2px solid transparent",
-                borderBottom: "1px solid var(--border)",
-                color: isActive ? "var(--text)" : "var(--text2)",
-                cursor: "pointer",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive)
-                  (e.currentTarget as HTMLElement).style.background =
-                    "var(--surface2)";
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive)
-                  (e.currentTarget as HTMLElement).style.background =
-                    "transparent";
-              }}
-            >
-              <div
-                className="stream-num-badge"
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  background: isActive ? "var(--accent)" : "var(--surface2)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  color: isActive ? "#fff" : "var(--text3)",
-                  flexShrink: 0,
-                }}
-              >
-                {i + 1}
+      <div style={{ maxHeight: "clamp(320px,55vh,700px)", overflowY: "auto" }}>
+        {groupEntries.map(([sourceName, sourceStreams]) => (
+          <div key={sourceName}>
+            {/* Source group header — only show if more than one source group */}
+            {groupEntries.length > 1 && (
+              <div style={{ padding: "8px 14px 4px", fontSize: "0.62rem", fontWeight: 700, color: "var(--text3)", letterSpacing: "0.08em", textTransform: "uppercase", background: "var(--surface2)", borderBottom: "0.5px solid var(--border)" }}>
+                {sourceName}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  className="stream-btn-label"
+            )}
+            {sourceStreams.map((s) => {
+              const i = globalIdx(s);
+              const isActive = activeStream?.embedUrl === s.embedUrl;
+              return (
+                <button
+                  key={i}
+                  onClick={() => onSwitch(s)}
                   style={{
-                    fontSize: "0.82rem",
-                    fontWeight: 500,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
+                    width: "100%", display: "flex", alignItems: "center", gap: 10,
+                    padding: "11px 14px", border: "none", textAlign: "left",
+                    background: isActive ? "rgba(230,57,70,0.08)" : "transparent",
+                    borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                    borderBottom: "1px solid var(--border)",
+                    color: isActive ? "var(--text)" : "var(--text2)",
+                    cursor: "pointer", transition: "background 0.15s",
                   }}
+                  onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
+                  onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                 >
-                  {s.source}
-                  {s.hd && (
-                    <span
-                      style={{
-                        fontSize: "0.58rem",
-                        background: "var(--gold)",
-                        color: "#000",
-                        borderRadius: 3,
-                        padding: "1px 4px",
-                        fontWeight: 700,
-                      }}
-                    >
-                      HD
-                    </span>
-                  )}
-                </div>
-                <div
-                  className="stream-btn-sub"
-                  style={{
-                    fontSize: "0.7rem",
-                    color: "var(--text3)",
-                    marginTop: 1,
-                  }}
-                >
-                  Stream #{s.streamNo}
-                  {s.language && s.language !== "unknown"
-                    ? ` · ${s.language}`
-                    : ""}
-                </div>
-              </div>
-              {isActive && (
-                <div
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "var(--accent)",
-                    flexShrink: 0,
-                    animation: "pulse 1.2s infinite",
-                  }}
-                />
-              )}
-            </button>
-          );
-        })}
+                  <div className="stream-num-badge" style={{ width: 28, height: 28, borderRadius: 6, background: isActive ? "var(--accent)" : "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: isActive ? "#fff" : "var(--text3)", flexShrink: 0 }}>
+                    {i + 1}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="stream-btn-label" style={{ fontSize: "0.82rem", fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
+                      {groupEntries.length === 1 ? sourceName : `Stream ${s.streamNo}`}
+                      {s.hd && <span style={{ fontSize: "0.58rem", background: "var(--gold)", color: "#000", borderRadius: 3, padding: "1px 4px", fontWeight: 700 }}>HD</span>}
+                    </div>
+                    <div className="stream-btn-sub" style={{ fontSize: "0.7rem", color: "var(--text3)", marginTop: 1 }}>
+                      {s.language && s.language !== "unknown" ? s.language : "English"}
+                    </div>
+                  </div>
+                  {isActive && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, animation: "pulse 1.2s infinite" }} />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );

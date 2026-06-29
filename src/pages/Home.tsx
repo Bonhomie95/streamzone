@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, RefreshCw, Heart } from 'lucide-react';
 import Header from '../components/Header';
 import SportsSidebar from '../components/SportsSidebar';
@@ -17,9 +17,14 @@ type SidebarFilter = string | '__favourites__';
 
 export default function Home() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [apiSports, setApiSports] = useState<Sport[]>([]);
   const [allMatches, setAllMatches] = useState<EnrichedMatch[]>([]);
-  const [selectedSport, setSelectedSport] = useState<SidebarFilter>(() => getPreferredSport() ?? 'all');
+
+  // Sport filter lives in ?sport= URL param so Back navigation restores it
+  const [selectedSport, setSelectedSport] = useState<SidebarFilter>(() => {
+    return searchParams.get('sport') ?? getPreferredSport() ?? 'all';
+  });
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -55,7 +60,7 @@ export default function Home() {
     const key = `match_${match.id}`;
     const value = JSON.stringify(match);
     sessionStorage.setItem(key, value);
-    try { localStorage.setItem(key, value); } catch { /* storage full */ }
+    try { localStorage.setItem(key, value); } catch {}
     navigate(`/watch/${encodeURIComponent(match.id)}`);
   }
 
@@ -63,9 +68,19 @@ export default function Home() {
     setSelectedSport(sportId);
     setStatusFilter('all');
     setSearchQuery('');
-    if (sportId !== 'all' && sportId !== '__favourites__') {
-      recordSportClick(sportId); // track preference
+    // Persist in URL so Back from Watch restores the filter
+    if (sportId === 'all') {
+      setSearchParams({});
+    } else {
+      setSearchParams({ sport: sportId });
     }
+    if (sportId !== 'all' && sportId !== '__favourites__') {
+      recordSportClick(sportId);
+    }
+  }
+
+  function clearFilter() {
+    handleSportSelect('all');
   }
 
   const sportsFromMatches = useMemo<Sport[]>(() => {
@@ -81,7 +96,6 @@ export default function Home() {
       .map(cat => ({ id: cat, name: apiNameMap[cat] ?? (cat.charAt(0).toUpperCase() + cat.slice(1)) }));
   }, [allMatches, apiSports]);
 
-  // Matches that involve a favourited team
   const favouriteMatches = useMemo(() =>
     allMatches.filter(m =>
       (m.teams?.home?.name && isTeamFav(m.teams.home.name)) ||
@@ -92,11 +106,8 @@ export default function Home() {
 
   const filteredMatches = useMemo(() => {
     let result = allMatches;
-    if (selectedSport === '__favourites__') {
-      result = favouriteMatches;
-    } else if (selectedSport !== 'all') {
-      result = result.filter(m => m.category === selectedSport);
-    }
+    if (selectedSport === '__favourites__') result = favouriteMatches;
+    else if (selectedSport !== 'all') result = result.filter(m => m.category === selectedSport);
     if (statusFilter !== 'all') result = result.filter(m => m.status === statusFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -110,11 +121,9 @@ export default function Home() {
   }, [allMatches, selectedSport, statusFilter, searchQuery, favouriteMatches]);
 
   const statusCounts = useMemo(() => {
-    const base = selectedSport === '__favourites__'
-      ? favouriteMatches
-      : selectedSport === 'all'
-        ? allMatches
-        : allMatches.filter(m => m.category === selectedSport);
+    const base = selectedSport === '__favourites__' ? favouriteMatches
+      : selectedSport === 'all' ? allMatches
+      : allMatches.filter(m => m.category === selectedSport);
     return {
       live:     base.filter(m => m.status === 'live').length,
       upcoming: base.filter(m => m.status === 'upcoming').length,
@@ -145,6 +154,7 @@ export default function Home() {
         selectedSport={selectedSport}
         onSportSelect={handleSportSelect}
         sportCounts={sportCounts}
+        favouriteCount={favouriteMatches.length}
       />
 
       <div style={{ padding: '10px 16px 0', display: 'flex', justifyContent: 'center' }}>
@@ -169,7 +179,6 @@ export default function Home() {
               </h1>
               <p style={{ fontSize: '0.72rem', color: 'var(--text3)', marginTop: 2 }}>
                 {filteredMatches.length} match{filteredMatches.length !== 1 ? 'es' : ''}
-                {selectedSport === '__favourites__' && favouriteMatches.length === 0 && ' — heart a team on any match card to add it here'}
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -195,7 +204,13 @@ export default function Home() {
           </div>
 
           <StatusTabs active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
-          <MatchGrid matches={filteredMatches} onMatchClick={handleMatchClick} loading={loading} />
+          <MatchGrid
+            matches={filteredMatches}
+            onMatchClick={handleMatchClick}
+            loading={loading}
+            activeSport={selectedSport}
+            onClearFilter={clearFilter}
+          />
 
           {!loading && filteredMatches.length > 4 && (
             <div style={{ padding: '0 16px 20px', display: 'flex', justifyContent: 'center' }}>
