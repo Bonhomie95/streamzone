@@ -92,7 +92,7 @@ export default function Watch() {
     } catch { /* noop */ }
     return detectIsTV();
   });
-  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const iframeLoadedRef = useRef(false);
   const loadWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function setDirectMode(on: boolean) {
@@ -255,7 +255,7 @@ export default function Watch() {
     setActiveStream(s);
     setIframeError(false);
     setRetryCountdown(null);
-    setIframeLoaded(false);
+    iframeLoadedRef.current = false;
   }
 
   // ─── Auto-retry on iframe error ───────────────────────────────────
@@ -307,13 +307,10 @@ export default function Watch() {
   // browser so we never sit on a blank iframe again.
   useEffect(() => {
     if (isTV || !activeStream) return; // already in direct mode, nothing to watch
-    setIframeLoaded(false);
+    iframeLoadedRef.current = false;
     if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
     loadWatchdogRef.current = setTimeout(() => {
-      setIframeLoaded((loaded) => {
-        if (!loaded) setDirectMode(true);
-        return loaded;
-      });
+      if (!iframeLoadedRef.current) setDirectMode(true);
     }, LOAD_WATCHDOG_MS);
     return () => {
       if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
@@ -990,7 +987,7 @@ export default function Watch() {
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
                   onLoad={() => {
-                    setIframeLoaded(true);
+                    iframeLoadedRef.current = true;
                     if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
                   }}
                   onError={handleIframeError}
