@@ -33,18 +33,12 @@ import {
 } from "../hooks/useWatchProgress";
 import AdBanner from "../components/AdBanner";
 import type { Movie, MediaType, Stream } from "../types";
+import { isTVBrowser } from "../utils/tvDetect";
 
 type ProbeStatus = "idle" | "probing" | "found" | "all_failed";
 
 // Probe a URL by fetching it with no-cors — if it resolves (even opaque) the domain is alive
-// Smart TV browsers (Tizen, webOS, Android TV) block no-cors cross-origin fetches and throw
-// a security/sandbox error that breaks the whole player. Skip probing on TVs and assume alive.
-function isTVBrowser(): boolean {
-  const ua = navigator.userAgent.toLowerCase();
-  return /tizen|webos|smart-tv|netcast|nettv|hbbtv|androidtv|crkey|googletv|viera|bravia|roku/.test(
-    ua,
-  );
-}
+// isTVBrowser is imported from the shared util — see src/utils/tvDetect.ts
 
 async function probeUrl(url: string): Promise<boolean> {
   if (isTVBrowser()) return true; // TV browsers can't do no-cors probes safely
@@ -1151,7 +1145,11 @@ export default function MovieWatch() {
                     display: "block",
                   }}
                   allowFullScreen
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                  // TV browsers auto-sandbox iframes on unknown `allow` attributes.
+                  {...(!isTVBrowser() && {
+                    allow:
+                      "autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write",
+                  })}
                   onError={() => setIframeError(true)}
                 />
               ) : null}

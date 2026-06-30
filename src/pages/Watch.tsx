@@ -21,10 +21,15 @@ import {
   badgeUrl,
   getDaddyStreams,
 } from "../api";
+import { isTVBrowser } from "../utils/tvDetect";
 import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
+import TVStreamPanel from "../components/TVStreamPanel";
+// import { isTVBrowser } from "../utils/device";
 import type { EnrichedMatch, Stream } from "../types";
+
+const IS_TV = isTVBrowser();
 
 // Auto-retry delay when an iframe errors — tries the next stream after this many ms
 const AUTO_RETRY_MS = 3_000;
@@ -44,6 +49,11 @@ export default function Watch() {
   // A second decodeURIComponent would break IDs that contain encoded chars (e.g. daddy_ IDs).
   const matchId = rawMatchId;
   const navigate = useNavigate();
+
+  // TV browsers (Tizen, webOS, Fire TV…) auto-sandbox cross-origin iframes when
+  // they encounter `allow` attributes they don't fully support, causing embedded
+  // players to show "remove sandbox attribute".  Strip the attribute on these platforms.
+  const isTV = isTVBrowser();
 
   const [match, setMatch] = useState<EnrichedMatch | null>(null);
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -840,22 +850,36 @@ export default function Watch() {
                   </div>
                 </div>
               ) : activeStream ? (
-                <iframe
-                  key={activeStream.embedUrl}
-                  ref={iframeRef}
-                  src={activeStream.embedUrl}
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    border: "none",
-                    display: "block",
-                  }}
-                  allowFullScreen
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-                  onError={handleIframeError}
-                />
+                IS_TV ? (
+                  <TVStreamPanel
+                    stream={activeStream}
+                    streams={streams}
+                    onSwitch={switchStream}
+                  />
+                ) : (
+                  <iframe
+                    key={activeStream.embedUrl}
+                    ref={iframeRef}
+                    src={activeStream.embedUrl}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      border: "none",
+                      display: "block",
+                    }}
+                    allowFullScreen
+                    // TV browsers auto-sandbox iframes when they see `allow` attributes
+                    // they don't fully support → "remove sandbox attribute" error.
+                    // Omit it on TV so the browser uses its own permissive defaults.
+                    {...(!isTV && {
+                      allow:
+                        "autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write",
+                    })}
+                    onError={handleIframeError}
+                  />
+                )
               ) : null}
             </div>
 

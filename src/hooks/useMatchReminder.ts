@@ -29,9 +29,7 @@ function loadReminders(): Record<string, Reminder> {
 }
 
 function saveReminders(r: Record<string, Reminder>) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(r));
-  } catch {}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(r)); } catch {}
 }
 
 export function getAllReminders(): Record<string, Reminder> {
@@ -98,16 +96,14 @@ export function useMatchReminder(match: EnrichedMatch) {
     const granted = await requestNotificationPermission();
     if (!granted) {
       alert(
-        "Please allow notifications in your browser settings to set reminders.",
+        "Please allow notifications in your browser settings to set reminders."
       );
       return;
     }
 
     const reminder: Reminder = {
       matchId: match.id,
-      matchTitle:
-        match.title ||
-        `${match.teams?.home?.name} vs ${match.teams?.away?.name}`,
+      matchTitle: match.title || `${match.teams?.home?.name} vs ${match.teams?.away?.name}`,
       matchDate: match.date,
       setAt: Date.now(),
     };
