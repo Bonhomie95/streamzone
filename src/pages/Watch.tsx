@@ -14,6 +14,7 @@ import {
   Film,
   Share2,
   Check,
+  Tv,
 } from "lucide-react";
 import {
   fetchStreams,
@@ -21,18 +22,28 @@ import {
   badgeUrl,
   getDaddyStreams,
 } from "../api";
-import { isTVBrowser } from "../utils/tvDetect";
 import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
-import TVStreamPanel from "../components/TVStreamPanel";
-// import { isTVBrowser } from "../utils/device";
 import type { EnrichedMatch, Stream } from "../types";
-
-const IS_TV = isTVBrowser();
 
 // Auto-retry delay when an iframe errors — tries the next stream after this many ms
 const AUTO_RETRY_MS = 3_000;
+
+// ─── TV detection ──────────────────────────────────────────────────
+// Smart TV browsers (Tizen, webOS, Fire TV's Silk/AFT, Android TV/Google TV,
+// HbbTV, VIDAA, etc.) frequently apply stricter cross-origin iframe policies
+// than mobile/desktop, which causes third-party embed pages to fail silently
+// inside an <iframe> even with no explicit sandbox attribute set. Rather than
+// fight those per-vendor quirks, we detect TV UAs and skip the iframe
+// entirely — the stream opens as a normal top-level page instead.
+function detectIsTV(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /TV|Tizen|SmartTV|SMART-TV|WebOS|Web0S|NetCast|HbbTV|VIDAA|BRAVIA|AFTT|AFTB|AFTN|AFTA|AFTS|AFTM|GoogleTV|CrKey|Roku|ADT-G3|Hisense|Philips TV|Panasonic TV/i.test(
+    ua,
+  );
+}
 
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString([], {
@@ -50,11 +61,6 @@ export default function Watch() {
   const matchId = rawMatchId;
   const navigate = useNavigate();
 
-  // TV browsers (Tizen, webOS, Fire TV…) auto-sandbox cross-origin iframes when
-  // they encounter `allow` attributes they don't fully support, causing embedded
-  // players to show "remove sandbox attribute".  Strip the attribute on these platforms.
-  const isTV = isTVBrowser();
-
   const [match, setMatch] = useState<EnrichedMatch | null>(null);
   const [streams, setStreams] = useState<Stream[]>([]);
   const [activeStream, setActiveStream] = useState<Stream | null>(null);
@@ -65,6 +71,7 @@ export default function Watch() {
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isTV] = useState(detectIsTV);
   const [showStreamList, setShowStreamList] = useState(true);
   const [liveMatches, setLiveMatches] = useState<EnrichedMatch[]>([]);
   const playerWrapRef = useRef<HTMLDivElement>(null);
@@ -849,37 +856,75 @@ export default function Watch() {
                     </div>
                   </div>
                 </div>
-              ) : activeStream ? (
-                IS_TV ? (
-                  <TVStreamPanel
-                    stream={activeStream}
-                    streams={streams}
-                    onSwitch={switchStream}
-                  />
-                ) : (
-                  <iframe
-                    key={activeStream.embedUrl}
-                    ref={iframeRef}
-                    src={activeStream.embedUrl}
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      width: "100%",
-                      height: "100%",
-                      border: "none",
-                      display: "block",
+              ) : activeStream && isTV ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 18,
+                    background: "var(--bg2)",
+                    textAlign: "center",
+                    padding: "0 24px",
+                  }}
+                >
+                  <Tv size={48} strokeWidth={1.2} color="var(--accent)" />
+                  <div>
+                    <div style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 6 }}>
+                      Ready to watch on TV
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text3)", maxWidth: 320 }}>
+                      {activeStream.source} · Stream #{activeStream.streamNo}
+                      {activeStream.hd ? " · HD" : ""}
+                    </div>
+                  </div>
+                  <button
+                    autoFocus
+                    onClick={() => {
+                      window.location.href = activeStream.embedUrl;
                     }}
-                    allowFullScreen
-                    // TV browsers auto-sandbox iframes when they see `allow` attributes
-                    // they don't fully support → "remove sandbox attribute" error.
-                    // Omit it on TV so the browser uses its own permissive defaults.
-                    {...(!isTV && {
-                      allow:
-                        "autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write",
-                    })}
-                    onError={handleIframeError}
-                  />
-                )
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      background: "var(--accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "12px 28px",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Tap to Watch
+                  </button>
+                  {streams.length > 1 && (
+                    <div style={{ fontSize: "0.72rem", color: "var(--text3)" }}>
+                      Pick a different source from the list below if this one doesn't load
+                    </div>
+                  )}
+                </div>
+              ) : activeStream ? (
+                <iframe
+                  key={activeStream.embedUrl}
+                  ref={iframeRef}
+                  src={activeStream.embedUrl}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    border: "none",
+                    display: "block",
+                  }}
+                  allowFullScreen
+                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                  onError={handleIframeError}
+                />
               ) : null}
             </div>
 
@@ -971,7 +1016,6 @@ export default function Watch() {
                   streams={streams}
                   activeStream={activeStream}
                   onSwitch={switchStream}
-                  isTV={isTV}
                 />
               )}
             </div>
@@ -987,7 +1031,6 @@ export default function Watch() {
               activeStream={activeStream}
               onSwitch={switchStream}
               loading={loadingStreams}
-              isTV={isTV}
             />
           </div>
         </div>
@@ -1368,13 +1411,11 @@ function StreamSidebar({
   activeStream,
   onSwitch,
   loading,
-  isTV = false,
 }: {
   streams: Stream[];
   activeStream: Stream | null;
   onSwitch: (s: Stream) => void;
   loading?: boolean;
-  isTV?: boolean;
 }) {
   if (loading) {
     return (
@@ -1412,7 +1453,21 @@ function StreamSidebar({
       <div style={{ padding: "12px 14px 8px", fontSize: "0.68rem", fontWeight: 700, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>
         {streams.length} Stream{streams.length !== 1 ? "s" : ""} Available
       </div>
-      <div style={{ maxHeight: "clamp(320px,55vh,700px)", overflowY: "auto" }}>
+      <div
+        style={{
+          maxHeight: "clamp(320px,55vh,700px)",
+          overflowY: "auto",
+          overscrollBehavior: "contain",
+          scrollBehavior: "smooth",
+          scrollPaddingBlock: 12,
+          // TV browsers (Tizen/webOS) often hide/ignore default scrollbars and
+          // don't translate remote arrow-key focus changes into container
+          // scrolling on their own — keep the scrollbar visibly present so
+          // there's a clear affordance, and rely on each button's onFocus
+          // handler below to scrollIntoView as focus moves via the D-pad.
+          scrollbarWidth: "thin",
+        }}
+      >
         {groupEntries.map(([sourceName, sourceStreams]) => (
           <div key={sourceName}>
             {/* Source group header — only show if more than one source group */}
@@ -1427,14 +1482,7 @@ function StreamSidebar({
               return (
                 <button
                   key={i}
-                  onClick={() => {
-                    onSwitch(s);
-                    // On TV, also open the stream directly in a new tab
-                    if (isTV) window.open(s.embedUrl, "_blank");
-                  }}
-                  // TV d-pad moves focus but doesn't auto-scroll the container.
-                  // scrollIntoView ensures the focused button is always visible.
-                  onFocus={(e) => e.currentTarget.scrollIntoView({ block: "nearest", behavior: "smooth" })}
+                  onClick={() => onSwitch(s)}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", gap: 10,
                     padding: "11px 14px", border: "none", textAlign: "left",
@@ -1443,10 +1491,17 @@ function StreamSidebar({
                     borderBottom: "1px solid var(--border)",
                     color: isActive ? "var(--text)" : "var(--text2)",
                     cursor: "pointer", transition: "background 0.15s",
-                    outline: "none",
                   }}
                   onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
                   onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  onFocus={(e) => {
+                    // D-pad/remote focus doesn't always trigger native scroll
+                    // on TV browsers — force the focused stream into view.
+                    (e.currentTarget as HTMLElement).scrollIntoView({
+                      block: "nearest",
+                      behavior: "smooth",
+                    });
+                  }}
                 >
                   <div className="stream-num-badge" style={{ width: 28, height: 28, borderRadius: 6, background: isActive ? "var(--accent)" : "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: isActive ? "#fff" : "var(--text3)", flexShrink: 0 }}>
                     {i + 1}

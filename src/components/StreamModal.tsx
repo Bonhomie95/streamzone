@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { X, ExternalLink, Wifi, WifiOff } from "lucide-react";
 import type { EnrichedMatch, Stream } from "../types";
 import { fetchStreams, badgeUrl } from "../api";
-import { isTVBrowser } from "../utils/tvDetect";
 
 interface StreamModalProps {
   match: EnrichedMatch;
@@ -291,8 +290,7 @@ export default function StreamModal({ match, onClose }: StreamModalProps) {
                         display: "block",
                       }}
                       allowFullScreen
-                      // Strip allow attr on TV browsers to avoid auto-sandbox behaviour.
-                      {...(!isTVBrowser() && { allow: "autoplay; fullscreen" })}
+                      allow="autoplay; fullscreen"
                       onError={() => setIframeBlocked(true)}
                     />
                     <div
