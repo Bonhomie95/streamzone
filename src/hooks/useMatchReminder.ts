@@ -8,6 +8,10 @@ import type { EnrichedMatch } from "../types";
 const STORAGE_KEY = "sz_reminders";
 const REMIND_MS = 15 * 60 * 1000; // 15 minutes before
 
+// TV browsers (Tizen, webOS, Fire TV Silk) don't have the Notification API.
+// Guard every access so the module never throws on those platforms.
+const NOTIF_SUPPORTED = "Notification" in window;
+
 export interface Reminder {
   matchId: string;
   matchTitle: string;
@@ -39,7 +43,7 @@ export function isReminderSet(matchId: string): boolean {
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (!("Notification" in window)) return false;
+  if (!NOTIF_SUPPORTED) return false;
   if (Notification.permission === "granted") return true;
   if (Notification.permission === "denied") return false;
   const result = await Notification.requestPermission();
@@ -48,11 +52,13 @@ export async function requestNotificationPermission(): Promise<boolean> {
 
 // Schedule a local notification via setTimeout (works without a push server)
 function scheduleLocalNotification(reminder: Reminder) {
+  if (!NOTIF_SUPPORTED) return; // no-op on TV browsers
   const fireAt = reminder.matchDate - REMIND_MS;
   const delay = fireAt - Date.now();
   if (delay <= 0 || delay > 7 * 24 * 60 * 60 * 1000) return; // skip if past or >7d away
 
   setTimeout(() => {
+    if (!NOTIF_SUPPORTED) return;
     if (Notification.permission !== "granted") return;
     // Re-check the reminder is still set (user may have removed it)
     if (!isReminderSet(reminder.matchId)) return;
@@ -92,14 +98,16 @@ export function useMatchReminder(match: EnrichedMatch) {
     const granted = await requestNotificationPermission();
     if (!granted) {
       alert(
-        "Please allow notifications in your browser settings to set reminders."
+        "Please allow notifications in your browser settings to set reminders.",
       );
       return;
     }
 
     const reminder: Reminder = {
       matchId: match.id,
-      matchTitle: match.title || `${match.teams?.home?.name} vs ${match.teams?.away?.name}`,
+      matchTitle:
+        match.title ||
+        `${match.teams?.home?.name} vs ${match.teams?.away?.name}`,
       matchDate: match.date,
       setAt: Date.now(),
     };
@@ -112,8 +120,10 @@ export function useMatchReminder(match: EnrichedMatch) {
   return { isSet, toggle };
 }
 
-// Re-schedule all stored reminders on app boot (survives page reload within same tab)
+// Re-schedule all stored reminders on app boot (survives page reload within same tab).
+// Called at module level in App.tsx — MUST NOT throw on any platform.
 export function rehydrateReminders() {
+  if (!NOTIF_SUPPORTED) return; // TV browsers: bail out cleanly
   if (Notification.permission !== "granted") return;
   const reminders = loadReminders();
   const now = Date.now();
