@@ -26,7 +26,7 @@ import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
 import TVStreamPanel from "../components/TVStreamPanel";
-import { isTVBrowser } from "../utils/device";
+// import { isTVBrowser } from "../utils/device";
 import type { EnrichedMatch, Stream } from "../types";
 
 const IS_TV = isTVBrowser();
