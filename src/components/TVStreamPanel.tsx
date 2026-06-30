@@ -1,23 +1,13 @@
 /**
- * TVStreamPanel — TV-browser stream launcher (no iframe).
+ * TVStreamPanel — opens the stream directly in a new tab on mount.
  *
- * Smart TV browsers (Tizen, webOS, Fire TV Silk) auto-sandbox cross-origin
- * iframes when they encounter `allow` / Permissions-Policy attributes they
- * don't support, causing the embedded player to display "remove sandbox
- * attribute" and refuse to play.  The workaround is to skip the iframe
- * entirely and open the stream URL as a standalone page in a new tab, where
- * the TV browser plays it without any sandboxing.
- *
- * UX:
- *  • Shows a prominent "Watch Live" launcher for the active stream.
- *  • Lists all other streams as large D-pad-friendly buttons.
- *  • ← / → (or P / N) on the keyboard / remote switches the active stream.
- *  • 1–9 jumps directly to a numbered stream.
- *  • Clicking / pressing Enter on any button opens that stream in a new tab.
+ * TV browsers sandbox cross-origin iframes, so we skip embedding entirely.
+ * The moment streams are ready, the active one opens in a new tab automatically.
+ * The panel stays visible so the user can switch to a different stream if needed.
  */
 
-import { useEffect, useState, useCallback } from "react";
-import { ExternalLink, Tv2 } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { ExternalLink, Tv2, Check } from "lucide-react";
 import type { Stream } from "../types";
 
 interface TVStreamPanelProps {
@@ -26,9 +16,7 @@ interface TVStreamPanelProps {
   onSwitch: (s: Stream) => void;
 }
 
-function openStream(url: string) {
-  // `noopener` is intentionally omitted — some TV browsers need the opener
-  // reference to handle window lifecycle correctly.
+function openInNewTab(url: string) {
   window.open(url, "_blank");
 }
 
@@ -37,243 +25,235 @@ export default function TVStreamPanel({
   streams,
   onSwitch,
 }: TVStreamPanelProps) {
-  const [activeIdx, setActiveIdx] = useState<number>(0);
+  const [launchedUrl, setLaunchedUrl] = useState<string | null>(null);
+  const autoOpenedRef = useRef<string | null>(null);
 
-  // Keep activeIdx in sync when parent switches the stream
+  // Auto-open the stream in a new tab as soon as it's available.
+  // Guard with a ref so we only auto-open each unique URL once
+  // (prevents re-opening when the parent re-renders).
   useEffect(() => {
     if (!stream) return;
-    const idx = streams.findIndex((s) => s.embedUrl === stream.embedUrl);
-    if (idx !== -1) setActiveIdx(idx);
-  }, [stream, streams]);
+    if (autoOpenedRef.current === stream.embedUrl) return;
+    autoOpenedRef.current = stream.embedUrl;
+    setLaunchedUrl(stream.embedUrl);
+    openInNewTab(stream.embedUrl);
+  }, [stream?.embedUrl]);
 
-  const switchTo = useCallback(
-    (idx: number) => {
-      const s = streams[idx];
-      if (!s) return;
-      setActiveIdx(idx);
-      onSwitch(s);
+  const handleSwitch = useCallback(
+    (s: Stream) => {
+      onSwitch(s); // keep parent state in sync
+      autoOpenedRef.current = s.embedUrl;
+      setLaunchedUrl(s.embedUrl);
+      openInNewTab(s.embedUrl);
     },
-    [streams, onSwitch],
+    [onSwitch],
   );
 
-  // Keyboard / TV remote navigation
+  // Keyboard / remote navigation
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      )
-        return;
-      if (streams.length === 0) return;
-
+      if (!stream || streams.length === 0) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const idx = streams.findIndex((s) => s.embedUrl === stream.embedUrl);
       if (e.key === "ArrowRight" || e.key === "n" || e.key === "N") {
         e.preventDefault();
-        switchTo((activeIdx + 1) % streams.length);
+        const next = streams[(idx + 1) % streams.length];
+        if (next) handleSwitch(next);
       } else if (e.key === "ArrowLeft" || e.key === "p" || e.key === "P") {
         e.preventDefault();
-        switchTo((activeIdx - 1 + streams.length) % streams.length);
-      } else if (e.key === "Enter" && stream) {
-        e.preventDefault();
-        openStream(stream.embedUrl);
+        const prev = streams[(idx - 1 + streams.length) % streams.length];
+        if (prev) handleSwitch(prev);
       } else if (e.key >= "1" && e.key <= "9") {
-        const idx = parseInt(e.key) - 1;
-        if (streams[idx]) switchTo(idx);
+        const target = streams[parseInt(e.key) - 1];
+        if (target) handleSwitch(target);
       }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [streams, activeIdx, stream, switchTo]);
+  }, [stream, streams, handleSwitch]);
 
   if (!stream) return null;
+
+  const launched = launchedUrl === stream.embedUrl;
 
   return (
     <div
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: 20,
-        padding: "8px 0",
+        gap: 16,
+        width: "100%",
+        aspectRatio: "16/9",
+        background: "var(--bg2)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius)",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "clamp(16px, 3vw, 40px)",
+        boxSizing: "border-box",
       }}
     >
-      {/* ── TV notice banner ──────────────────────────────────────── */}
+      {/* TV badge */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          background: "rgba(77,158,247,0.08)",
-          border: "1px solid rgba(77,158,247,0.2)",
-          borderRadius: 10,
-          padding: "10px 16px",
-          fontSize: "0.8rem",
-          color: "var(--text2)",
+          gap: 8,
+          color: "var(--text3)",
+          fontSize: "0.78rem",
         }}
       >
-        <Tv2 size={16} color="var(--blue)" style={{ flexShrink: 0 }} />
-        <span>
-          TV browser detected — streams open directly for best compatibility.
-          Press <strong>Enter</strong> or tap a button to launch.
-        </span>
+        <Tv2 size={16} color="var(--blue)" />
+        TV browser detected
       </div>
 
-      {/* ── Primary launch button ─────────────────────────────────── */}
+      {/* Status */}
+      <div style={{ textAlign: "center" }}>
+        <div
+          style={{
+            fontFamily: "Bebas Neue, sans-serif",
+            fontSize: "clamp(1rem, 2.5vw, 1.6rem)",
+            letterSpacing: "0.06em",
+            color: "var(--text)",
+            marginBottom: 6,
+          }}
+        >
+          {stream.source}
+          {stream.hd && (
+            <span
+              style={{
+                marginLeft: 10,
+                fontSize: "0.6rem",
+                background: "var(--gold)",
+                color: "#000",
+                borderRadius: 4,
+                padding: "2px 7px",
+                fontWeight: 800,
+                verticalAlign: "middle",
+              }}
+            >
+              HD
+            </span>
+          )}
+        </div>
+        <div
+          style={{
+            fontSize: "0.8rem",
+            color: launched ? "var(--green)" : "var(--text3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          {launched ? (
+            <><Check size={14} /> Opened in new tab</>
+          ) : (
+            "Opening stream…"
+          )}
+        </div>
+      </div>
+
+      {/* Re-open / manual launch button */}
       <button
-        onClick={() => openStream(stream.embedUrl)}
+        onClick={() => {
+          setLaunchedUrl(stream.embedUrl);
+          openInNewTab(stream.embedUrl);
+        }}
         autoFocus
         style={{
-          width: "100%",
-          minHeight: 96,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          gap: 14,
+          gap: 10,
           background: "var(--accent)",
-          border: "none",
-          borderRadius: 12,
           color: "#fff",
-          fontSize: "1.1rem",
+          border: "none",
+          borderRadius: 10,
+          padding: "14px 28px",
+          fontSize: "0.95rem",
           fontWeight: 700,
           cursor: "pointer",
-          letterSpacing: "0.03em",
           outline: "none",
-          transition: "opacity 0.15s",
+          minWidth: 200,
+          justifyContent: "center",
         }}
-        onFocus={(e) => (e.currentTarget.style.opacity = "0.85")}
-        onBlur={(e) => (e.currentTarget.style.opacity = "1")}
+        onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 0 3px rgba(230,57,70,0.5)")}
+        onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
       >
-        <ExternalLink size={22} />
-        Watch Live — {stream.source}
-        {stream.hd && (
-          <span
-            style={{
-              fontSize: "0.65rem",
-              background: "var(--gold)",
-              color: "#000",
-              borderRadius: 4,
-              padding: "2px 7px",
-              fontWeight: 800,
-            }}
-          >
-            HD
-          </span>
-        )}
+        <ExternalLink size={18} />
+        Open Stream
       </button>
 
-      {/* ── Stream switcher ───────────────────────────────────────── */}
+      {/* Other streams */}
       {streams.length > 1 && (
-        <div>
-          <div
-            style={{
-              fontSize: "0.68rem",
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              color: "var(--text3)",
-              marginBottom: 10,
-            }}
-          >
-            {streams.length} streams — ← → to switch · Enter to open
-          </div>
-
-          {/* Horizontally scrollable row of stream buttons */}
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              overflowX: "auto",
-              paddingBottom: 6,
-              scrollbarWidth: "none",
-            }}
-          >
-            {streams.map((s, i) => {
-              const isActive = stream.embedUrl === s.embedUrl;
-              return (
-                <button
-                  key={i}
-                  onClick={() => {
-                    switchTo(i);
-                    openStream(s.embedUrl);
-                  }}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            justifyContent: "center",
+            marginTop: 4,
+          }}
+        >
+          {streams.map((s, i) => {
+            const isActive = stream.embedUrl === s.embedUrl;
+            return (
+              <button
+                key={i}
+                onClick={() => handleSwitch(s)}
+                style={{
+                  minWidth: 80,
+                  minHeight: 56,
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: isActive
+                    ? "2px solid var(--accent)"
+                    : "2px solid var(--border2)",
+                  background: isActive ? "rgba(230,57,70,0.12)" : "var(--surface)",
+                  color: isActive ? "var(--text)" : "var(--text2)",
+                  cursor: "pointer",
+                  fontSize: "0.78rem",
+                  fontWeight: 600,
+                  outline: "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 3,
+                }}
+                onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 0 3px var(--accent)")}
+                onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
+              >
+                <span
                   style={{
-                    flexShrink: 0,
-                    minWidth: 110,
-                    minHeight: 72,
-                    padding: "10px 16px",
-                    borderRadius: 10,
-                    border: isActive
-                      ? "2px solid var(--accent)"
-                      : "2px solid var(--border2)",
-                    background: isActive
-                      ? "rgba(230,57,70,0.15)"
-                      : "var(--surface)",
-                    color: isActive ? "var(--text)" : "var(--text2)",
-                    cursor: "pointer",
+                    width: 24,
+                    height: 24,
+                    borderRadius: 5,
+                    background: isActive ? "var(--accent)" : "var(--surface2)",
+                    color: isActive ? "#fff" : "var(--text3)",
                     display: "flex",
-                    flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 5,
-                    outline: "none",
-                    transition: "border-color 0.15s, background 0.15s",
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
                   }}
-                  onFocus={(e) =>
-                    (e.currentTarget.style.boxShadow =
-                      "0 0 0 3px var(--accent)")
-                  }
-                  onBlur={(e) =>
-                    (e.currentTarget.style.boxShadow = "none")
-                  }
                 >
-                  {/* Number badge */}
-                  <span
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 6,
-                      background: isActive
-                        ? "var(--accent)"
-                        : "var(--surface2)",
-                      color: isActive ? "#fff" : "var(--text3)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "0.85rem",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {i + 1}
+                  {i + 1}
+                </span>
+                {s.source}
+                {s.hd && (
+                  <span style={{ fontSize: "0.54rem", background: "var(--gold)", color: "#000", borderRadius: 3, padding: "1px 4px", fontWeight: 800 }}>
+                    HD
                   </span>
-
-                  <span
-                    style={{
-                      fontSize: "0.78rem",
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {s.source}
-                  </span>
-
-                  {s.hd && (
-                    <span
-                      style={{
-                        fontSize: "0.56rem",
-                        background: "var(--gold)",
-                        color: "#000",
-                        borderRadius: 3,
-                        padding: "1px 5px",
-                        fontWeight: 800,
-                      }}
-                    >
-                      HD
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
+
+      <div style={{ fontSize: "0.68rem", color: "var(--text3)", textAlign: "center" }}>
+        ← → or 1–9 to switch streams
+      </div>
     </div>
   );
 }

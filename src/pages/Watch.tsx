@@ -26,7 +26,7 @@ import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
 import TVStreamPanel from "../components/TVStreamPanel";
-// import { isTVBrowser } from "../utils/device";
+import { isTVBrowser } from "../utils/device";
 import type { EnrichedMatch, Stream } from "../types";
 
 const IS_TV = isTVBrowser();
@@ -971,6 +971,7 @@ export default function Watch() {
                   streams={streams}
                   activeStream={activeStream}
                   onSwitch={switchStream}
+                  isTV={isTV}
                 />
               )}
             </div>
@@ -986,6 +987,7 @@ export default function Watch() {
               activeStream={activeStream}
               onSwitch={switchStream}
               loading={loadingStreams}
+              isTV={isTV}
             />
           </div>
         </div>
@@ -1366,11 +1368,13 @@ function StreamSidebar({
   activeStream,
   onSwitch,
   loading,
+  isTV = false,
 }: {
   streams: Stream[];
   activeStream: Stream | null;
   onSwitch: (s: Stream) => void;
   loading?: boolean;
+  isTV?: boolean;
 }) {
   if (loading) {
     return (
@@ -1423,7 +1427,14 @@ function StreamSidebar({
               return (
                 <button
                   key={i}
-                  onClick={() => onSwitch(s)}
+                  onClick={() => {
+                    onSwitch(s);
+                    // On TV, also open the stream directly in a new tab
+                    if (isTV) window.open(s.embedUrl, "_blank");
+                  }}
+                  // TV d-pad moves focus but doesn't auto-scroll the container.
+                  // scrollIntoView ensures the focused button is always visible.
+                  onFocus={(e) => e.currentTarget.scrollIntoView({ block: "nearest", behavior: "smooth" })}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", gap: 10,
                     padding: "11px 14px", border: "none", textAlign: "left",
@@ -1432,6 +1443,7 @@ function StreamSidebar({
                     borderBottom: "1px solid var(--border)",
                     color: isActive ? "var(--text)" : "var(--text2)",
                     cursor: "pointer", transition: "background 0.15s",
+                    outline: "none",
                   }}
                   onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
                   onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
