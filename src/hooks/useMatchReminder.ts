@@ -53,6 +53,7 @@ function scheduleLocalNotification(reminder: Reminder) {
   if (delay <= 0 || delay > 7 * 24 * 60 * 60 * 1000) return; // skip if past or >7d away
 
   setTimeout(() => {
+    if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
     // Re-check the reminder is still set (user may have removed it)
     if (!isReminderSet(reminder.matchId)) return;
@@ -92,14 +93,16 @@ export function useMatchReminder(match: EnrichedMatch) {
     const granted = await requestNotificationPermission();
     if (!granted) {
       alert(
-        "Please allow notifications in your browser settings to set reminders."
+        "Please allow notifications in your browser settings to set reminders.",
       );
       return;
     }
 
     const reminder: Reminder = {
       matchId: match.id,
-      matchTitle: match.title || `${match.teams?.home?.name} vs ${match.teams?.away?.name}`,
+      matchTitle:
+        match.title ||
+        `${match.teams?.home?.name} vs ${match.teams?.away?.name}`,
       matchDate: match.date,
       setAt: Date.now(),
     };
@@ -114,6 +117,7 @@ export function useMatchReminder(match: EnrichedMatch) {
 
 // Re-schedule all stored reminders on app boot (survives page reload within same tab)
 export function rehydrateReminders() {
+  if (!("Notification" in window)) return; // TV browsers (Tizen/webOS/Fire TV) have no Notification API
   if (Notification.permission !== "granted") return;
   const reminders = loadReminders();
   const now = Date.now();
