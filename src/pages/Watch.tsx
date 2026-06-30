@@ -29,6 +29,10 @@ import type { EnrichedMatch, Stream } from "../types";
 
 // Auto-retry delay when an iframe errors — tries the next stream after this many ms
 const AUTO_RETRY_MS = 3_000;
+// If an iframe never fires onload within this window, assume it's silently
+// blocked (CSP/X-Frame-Options blocks don't trigger onError) and fall back
+// to direct mode instead of leaving the user staring at a blank player.
+const LOAD_WATCHDOG_MS = 5_000;
 
 // ─── TV detection ──────────────────────────────────────────────────
 // Smart TV browsers (Tizen, webOS, Fire TV's Silk/AFT, Android TV/Google TV,
@@ -71,7 +75,33 @@ export default function Watch() {
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isTV] = useState(detectIsTV);
+  // "direct mode" = skip the iframe, show a Tap-to-Watch card that navigates
+  // top-level instead. UA sniffing alone misses plenty of TVs (reduced/generic
+  // UA strings on newer Tizen/webOS firmware), so this is seeded from UA
+  // detection but can also be set by a load-watchdog (iframe blocked via CSP/
+  // X-Frame-Options never fires onError, it just stays blank — only a missed
+  // onload tells us) or by the user manually via the "Trouble loading?" link.
+  // Once learned for this browser, it's remembered so we never show the
+  // iframe error flicker again on a known-bad device.
+  const DIRECT_MODE_KEY = "sz_direct_mode";
+  const [isTV, setIsTV] = useState(() => {
+    try {
+      const stored = localStorage.getItem(DIRECT_MODE_KEY);
+      if (stored === "1") return true;
+      if (stored === "0") return false;
+    } catch { /* noop */ }
+    return detectIsTV();
+  });
+  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const loadWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function setDirectMode(on: boolean) {
+    setIsTV(on);
+    try {
+      localStorage.setItem(DIRECT_MODE_KEY, on ? "1" : "0");
+    } catch { /* noop */ }
+  }
+
   const [showStreamList, setShowStreamList] = useState(true);
   const [liveMatches, setLiveMatches] = useState<EnrichedMatch[]>([]);
   const playerWrapRef = useRef<HTMLDivElement>(null);
@@ -225,6 +255,7 @@ export default function Watch() {
     setActiveStream(s);
     setIframeError(false);
     setRetryCountdown(null);
+    setIframeLoaded(false);
   }
 
   // ─── Auto-retry on iframe error ───────────────────────────────────
@@ -267,6 +298,27 @@ export default function Watch() {
 
   // Clean up timers on unmount
   useEffect(() => () => clearRetryTimers(), []);
+
+  // ─── Load watchdog ─────────────────────────────────────────────────
+  // Iframes blocked by CSP frame-ancestors or X-Frame-Options never fire
+  // `onError` — they just render blank forever. The only signal we get is a
+  // missing `onload`. If it doesn't fire within LOAD_WATCHDOG_MS, assume the
+  // embed is blocked, switch to direct mode, and remember that for this
+  // browser so we never sit on a blank iframe again.
+  useEffect(() => {
+    if (isTV || !activeStream) return; // already in direct mode, nothing to watch
+    setIframeLoaded(false);
+    if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
+    loadWatchdogRef.current = setTimeout(() => {
+      setIframeLoaded((loaded) => {
+        if (!loaded) setDirectMode(true);
+        return loaded;
+      });
+    }, LOAD_WATCHDOG_MS);
+    return () => {
+      if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
+    };
+  }, [activeStream, isTV]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -907,6 +959,20 @@ export default function Watch() {
                       Pick a different source from the list below if this one doesn't load
                     </div>
                   )}
+                  <button
+                    onClick={() => setDirectMode(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--text3)",
+                      fontSize: "0.7rem",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                      marginTop: 4,
+                    }}
+                  >
+                    Try the embedded player instead
+                  </button>
                 </div>
               ) : activeStream ? (
                 <iframe
@@ -923,10 +989,33 @@ export default function Watch() {
                   }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                  onLoad={() => {
+                    setIframeLoaded(true);
+                    if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
+                  }}
                   onError={handleIframeError}
                 />
               ) : null}
             </div>
+
+            {/* Manual escape hatch — covers TVs/devices that detection misses */}
+            {activeStream && !isTV && (
+              <button
+                onClick={() => setDirectMode(true)}
+                style={{
+                  alignSelf: "center",
+                  background: "none",
+                  border: "none",
+                  color: "var(--text3)",
+                  fontSize: "0.72rem",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  padding: "2px 0",
+                }}
+              >
+                Player stuck or blank on a TV? Tap here to open the stream directly
+              </button>
+            )}
 
             {/* Active stream info bar */}
             {activeStream && (
