@@ -1,11 +1,13 @@
 {
   "rewrites": [
     { "source": "/api/status", "destination": "/api/status" },
-    { "source": "/api",        "destination": "/api/proxy"  },
-    { "source": "/(.*)",       "destination": "/index.html" }
+    { "source": "/api", "destination": "/api/proxy" },
+    { "source": "/embed-proxy", "destination": "/api/embed-proxy" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/proxy.js":  { "maxDuration": 15 },
-    "api/status.js": { "maxDuration": 10 }
+    "api/proxy.js": { "maxDuration": 15 },
+    "api/status.js": { "maxDuration": 10 },
+    "api/embed-proxy.js": { "maxDuration": 15 }
   }
 }

@@ -14,13 +14,13 @@ import {
   Film,
   Share2,
   Check,
-  Tv,
 } from "lucide-react";
 import {
   fetchStreams,
   fetchAllMatches,
   badgeUrl,
   getDaddyStreams,
+  proxiedEmbedUrl,
 } from "../api";
 import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
@@ -29,19 +29,11 @@ import type { EnrichedMatch, Stream } from "../types";
 
 // Auto-retry delay when an iframe errors — tries the next stream after this many ms
 const AUTO_RETRY_MS = 3_000;
-// If an iframe never fires onload within this window, assume it's silently
-// blocked (CSP/X-Frame-Options blocks don't trigger onError) and fall back
-// to direct mode instead of leaving the user staring at a blank player.
-const LOAD_WATCHDOG_MS = 5_000;
 
-// ─── TV detection ──────────────────────────────────────────────────
-// Smart TV browsers (Tizen, webOS, Fire TV's Silk/AFT, Android TV/Google TV,
-// HbbTV, VIDAA, etc.) frequently apply stricter cross-origin iframe policies
-// than mobile/desktop, which causes third-party embed pages to fail silently
-// inside an <iframe> even with no explicit sandbox attribute set. Rather than
-// fight those per-vendor quirks, we detect TV UAs and skip the iframe
-// entirely — the stream opens as a normal top-level page instead.
-function detectIsTV(): boolean {
+// Used only to decide whether the iframe src is routed through /embed-proxy —
+// TV browsers enforce X-Frame-Options/CSP frame-ancestors strictly and block
+// third-party sports embeds outright, while desktop/mobile tolerate them fine.
+function isTVBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
   return /TV|Tizen|SmartTV|SMART-TV|WebOS|Web0S|NetCast|HbbTV|VIDAA|BRAVIA|AFTT|AFTB|AFTN|AFTA|AFTS|AFTM|GoogleTV|CrKey|Roku|ADT-G3|Hisense|Philips TV|Panasonic TV/i.test(
@@ -75,33 +67,7 @@ export default function Watch() {
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // "direct mode" = skip the iframe, show a Tap-to-Watch card that navigates
-  // top-level instead. UA sniffing alone misses plenty of TVs (reduced/generic
-  // UA strings on newer Tizen/webOS firmware), so this is seeded from UA
-  // detection but can also be set by a load-watchdog (iframe blocked via CSP/
-  // X-Frame-Options never fires onError, it just stays blank — only a missed
-  // onload tells us) or by the user manually via the "Trouble loading?" link.
-  // Once learned for this browser, it's remembered so we never show the
-  // iframe error flicker again on a known-bad device.
-  const DIRECT_MODE_KEY = "sz_direct_mode";
-  const [isTV, setIsTV] = useState(() => {
-    try {
-      const stored = localStorage.getItem(DIRECT_MODE_KEY);
-      if (stored === "1") return true;
-      if (stored === "0") return false;
-    } catch { /* noop */ }
-    return detectIsTV();
-  });
-  const iframeLoadedRef = useRef(false);
-  const loadWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function setDirectMode(on: boolean) {
-    setIsTV(on);
-    try {
-      localStorage.setItem(DIRECT_MODE_KEY, on ? "1" : "0");
-    } catch { /* noop */ }
-  }
-
+  const [isTV] = useState(isTVBrowser);
   const [showStreamList, setShowStreamList] = useState(true);
   const [liveMatches, setLiveMatches] = useState<EnrichedMatch[]>([]);
   const playerWrapRef = useRef<HTMLDivElement>(null);
@@ -165,6 +131,17 @@ export default function Watch() {
     if (!match) return;
     loadStreams(match);
   }, [match]);
+
+  // If a match is upcoming or just finished and no streams were found yet,
+  // keep retrying — sources often populate the URL shortly before kickoff
+  // or keep it live briefly after the scheduled end, regardless of status.
+  useEffect(() => {
+    if (!match) return;
+    if (loadingStreams || streams.length > 0) return;
+    if (match.status === "live") return; // already tried hard enough
+    const t = setInterval(() => loadStreams(match), 30_000);
+    return () => clearInterval(t);
+  }, [match, loadingStreams, streams.length]);
 
   // ─── Load live rail via the race API (fix: was calling both APIs separately) ──
   useEffect(() => {
@@ -255,7 +232,6 @@ export default function Watch() {
     setActiveStream(s);
     setIframeError(false);
     setRetryCountdown(null);
-    iframeLoadedRef.current = false;
   }
 
   // ─── Auto-retry on iframe error ───────────────────────────────────
@@ -298,24 +274,6 @@ export default function Watch() {
 
   // Clean up timers on unmount
   useEffect(() => () => clearRetryTimers(), []);
-
-  // ─── Load watchdog ─────────────────────────────────────────────────
-  // Iframes blocked by CSP frame-ancestors or X-Frame-Options never fire
-  // `onError` — they just render blank forever. The only signal we get is a
-  // missing `onload`. If it doesn't fire within LOAD_WATCHDOG_MS, assume the
-  // embed is blocked, switch to direct mode, and remember that for this
-  // browser so we never sit on a blank iframe again.
-  useEffect(() => {
-    if (isTV || !activeStream) return; // already in direct mode, nothing to watch
-    iframeLoadedRef.current = false;
-    if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
-    loadWatchdogRef.current = setTimeout(() => {
-      if (!iframeLoadedRef.current) setDirectMode(true);
-    }, LOAD_WATCHDOG_MS);
-    return () => {
-      if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
-    };
-  }, [activeStream, isTV]);
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -796,7 +754,9 @@ export default function Watch() {
                         No streams available
                       </span>
                       <span style={{ fontSize: "0.75rem", color: "var(--text3)" }}>
-                        Check back when the match goes live
+                        {match?.status === "finished"
+                          ? "Still checking sources — a link may appear shortly"
+                          : "Check back when the match goes live"}
                       </span>
                     </>
                   )}
@@ -905,77 +865,11 @@ export default function Watch() {
                     </div>
                   </div>
                 </div>
-              ) : activeStream && isTV ? (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 18,
-                    background: "var(--bg2)",
-                    textAlign: "center",
-                    padding: "0 24px",
-                  }}
-                >
-                  <Tv size={48} strokeWidth={1.2} color="var(--accent)" />
-                  <div>
-                    <div style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 6 }}>
-                      Ready to watch on TV
-                    </div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text3)", maxWidth: 320 }}>
-                      {activeStream.source} · Stream #{activeStream.streamNo}
-                      {activeStream.hd ? " · HD" : ""}
-                    </div>
-                  </div>
-                  <button
-                    autoFocus
-                    onClick={() => {
-                      window.location.href = activeStream.embedUrl;
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      background: "var(--accent)",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 8,
-                      padding: "12px 28px",
-                      fontSize: "1rem",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Tap to Watch
-                  </button>
-                  {streams.length > 1 && (
-                    <div style={{ fontSize: "0.72rem", color: "var(--text3)" }}>
-                      Pick a different source from the list below if this one doesn't load
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setDirectMode(false)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--text3)",
-                      fontSize: "0.7rem",
-                      textDecoration: "underline",
-                      cursor: "pointer",
-                      marginTop: 4,
-                    }}
-                  >
-                    Try the embedded player instead
-                  </button>
-                </div>
               ) : activeStream ? (
                 <iframe
                   key={activeStream.embedUrl}
                   ref={iframeRef}
-                  src={activeStream.embedUrl}
+                  src={isTV ? proxiedEmbedUrl(activeStream.embedUrl) : activeStream.embedUrl}
                   style={{
                     position: "absolute",
                     inset: 0,
@@ -986,33 +880,10 @@ export default function Watch() {
                   }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-                  onLoad={() => {
-                    iframeLoadedRef.current = true;
-                    if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
-                  }}
                   onError={handleIframeError}
                 />
               ) : null}
             </div>
-
-            {/* Manual escape hatch — covers TVs/devices that detection misses */}
-            {activeStream && !isTV && (
-              <button
-                onClick={() => setDirectMode(true)}
-                style={{
-                  alignSelf: "center",
-                  background: "none",
-                  border: "none",
-                  color: "var(--text3)",
-                  fontSize: "0.72rem",
-                  textDecoration: "underline",
-                  cursor: "pointer",
-                  padding: "2px 0",
-                }}
-              >
-                Player stuck or blank on a TV? Tap here to open the stream directly
-              </button>
-            )}
 
             {/* Active stream info bar */}
             {activeStream && (

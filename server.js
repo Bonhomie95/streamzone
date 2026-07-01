@@ -329,16 +329,10 @@ app.get("/api/status", async (req, res) => {
 // CSP frame-ancestors headers. Required for Smart TV browsers (Tizen, webOS,
 // Android TV) which enforce these headers and block iframes that desktop
 // browsers would load silently.
-const EMBED_PROXY_ALLOWLIST = [
-  "vidsrc.to",
-  "vidsrc.me",
-  "embed.su",
-  "autoembed.co",
-  "vidlink.pro",
-  "2embed.cc",
-  "multiembed.mov",
-];
-
+// Sports source domains (DaddyLive mirrors especially) rotate frequently,
+// so this validates the target is a well-formed http(s) URL rather than
+// maintaining a fixed allowlist, and relies on the rate limiter to guard
+// against abuse as an open relay.
 app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
   const raw = req.query.url;
   if (!raw || typeof raw !== "string") {
@@ -348,15 +342,11 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
   let target;
   try {
     target = new URL(raw);
+    if (target.protocol !== "https:" && target.protocol !== "http:") {
+      throw new Error("bad protocol");
+    }
   } catch {
     return res.status(400).json({ error: "Invalid URL" });
-  }
-
-  const allowed = EMBED_PROXY_ALLOWLIST.some(
-    (h) => target.hostname === h || target.hostname.endsWith("." + h),
-  );
-  if (!allowed) {
-    return res.status(403).json({ error: "Domain not in allowlist" });
   }
 
   try {
@@ -364,7 +354,7 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Referer: "https://www.google.com/",
+        Referer: `${target.protocol}//${target.hostname}/`,
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",

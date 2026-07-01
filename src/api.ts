@@ -148,6 +148,15 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
   }
 }
 
+// Wraps a third-party embed URL so it's fetched same-origin through
+// /embed-proxy, which strips X-Frame-Options / CSP frame-ancestors headers.
+// Smart TV browsers enforce those headers strictly and silently block the
+// iframe; desktop/mobile browsers don't need this, so callers should only
+// use it once a TV UA is detected.
+export function proxiedEmbedUrl(url: string): string {
+  return `/embed-proxy?url=${encodeURIComponent(url)}`;
+}
+
 // getDaddyStreams extracts the embedded stream URLs from a DaddyLive match.
 // _daddyUrls is preserved through storage because we JSON.stringify the full
 // match object (including non-enumerable lookalike fields) when caching to
