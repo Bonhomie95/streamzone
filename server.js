@@ -361,7 +361,20 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
       },
     });
 
-    const body = await upstream.text();
+    let body = await upstream.text();
+
+    // The page's own relative URLs (JS bundles, CSS, its player's XHR/fetch
+    // calls) must still resolve against the ORIGINAL domain, not ours —
+    // otherwise every one of those requests 404s against our server and the
+    // page's script never runs, leaving a blank iframe with no error.
+    // Inject a <base> tag so relative paths keep working while the
+    // top-level document itself is same-origin (dodging the framing block).
+    const baseHref = `${target.protocol}//${target.host}/`;
+    if (/<head[^>]*>/i.test(body)) {
+      body = body.replace(/<head([^>]*)>/i, `<head$1><base href="${baseHref}">`);
+    } else {
+      body = `<base href="${baseHref}">` + body;
+    }
 
     // Strip headers that block TV browser iframes
     res.removeHeader("X-Frame-Options");

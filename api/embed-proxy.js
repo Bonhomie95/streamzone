@@ -69,7 +69,18 @@ export default async function handler(req, res) {
       },
     });
 
-    const body = await upstream.text();
+    let body = await upstream.text();
+
+    // Relative URLs inside the page (JS/CSS/its own XHR calls) must still
+    // resolve against the ORIGINAL domain or they 404 against our server,
+    // leaving a blank iframe with no visible error. Inject <base> to fix
+    // that while the top-level document stays same-origin.
+    const baseHref = `${target.protocol}//${target.host}/`;
+    if (/<head[^>]*>/i.test(body)) {
+      body = body.replace(/<head([^>]*)>/i, `<head$1><base href="${baseHref}">`);
+    } else {
+      body = `<base href="${baseHref}">` + body;
+    }
 
     res.removeHeader("X-Frame-Options");
     res.setHeader(
