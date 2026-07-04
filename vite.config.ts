@@ -12,6 +12,10 @@ export default defineConfig({
         // Rewrite /api/proxy → /api and /api/status stays as-is
         rewrite: (path) => path.replace(/^\/api\/proxy/, '/api'),
       },
+      '/embed-proxy': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 })

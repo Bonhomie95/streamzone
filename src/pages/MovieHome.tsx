@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, Star, Play, TrendingUp, Flame, Award, Clock, Tv, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Search, X, Star, Play, TrendingUp, Flame, Award, Clock, Tv, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from '../components/Header';
 import AdBanner from '../components/AdBanner';
 import AddToHomeScreen from '../components/AddToHomeScreen';
@@ -12,14 +12,14 @@ import {
 import type { Movie, Genre, MediaType } from '../types';
 
 const CATEGORIES = [
-  { id: 'trending',        label: 'Trending',      icon: <TrendingUp size={14}/>, fetch: () => fetchTrending('movie') },
-  { id: 'popular',         label: 'Popular',       icon: <Flame size={14}/>,      fetch: () => fetchPopular('movie') },
-  { id: 'top_rated',       label: 'Top Rated',     icon: <Award size={14}/>,      fetch: () => fetchTopRated('movie') },
-  { id: 'now_playing',     label: 'In Cinemas',    icon: <Play size={14}/>,       fetch: fetchNowPlaying },
-  { id: 'upcoming',        label: 'Upcoming',      icon: <Clock size={14}/>,      fetch: () => fetchUpcomingMovies() },
-  { id: 'trending_tv',     label: 'Trending TV',   icon: <Tv size={14}/>,         fetch: () => fetchTrending('tv') },
-  { id: 'popular_tv',      label: 'Popular TV',    icon: <Tv size={14}/>,         fetch: () => fetchPopular('tv') },
-  { id: 'top_rated_tv',    label: 'Top Rated TV',  icon: <Award size={14}/>,      fetch: () => fetchTopRated('tv') },
+  { id: 'trending',        label: 'Trending',      icon: <TrendingUp size={14}/>, fetch: (page: number) => fetchTrending('movie', page) },
+  { id: 'popular',         label: 'Popular',       icon: <Flame size={14}/>,      fetch: (page: number) => fetchPopular('movie', page) },
+  { id: 'top_rated',       label: 'Top Rated',     icon: <Award size={14}/>,      fetch: (page: number) => fetchTopRated('movie', page) },
+  { id: 'now_playing',     label: 'In Cinemas',    icon: <Play size={14}/>,       fetch: (page: number) => fetchNowPlaying(page) },
+  { id: 'upcoming',        label: 'Upcoming',      icon: <Clock size={14}/>,      fetch: (page: number) => fetchUpcomingMovies(page) },
+  { id: 'trending_tv',     label: 'Trending TV',   icon: <Tv size={14}/>,         fetch: (page: number) => fetchTrending('tv', page) },
+  { id: 'popular_tv',      label: 'Popular TV',    icon: <Tv size={14}/>,         fetch: (page: number) => fetchPopular('tv', page) },
+  { id: 'top_rated_tv',    label: 'Top Rated TV',  icon: <Award size={14}/>,      fetch: (page: number) => fetchTopRated('tv', page) },
 ];
 
 export default function MovieHome() {
@@ -29,6 +29,8 @@ export default function MovieHome() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [featured, setFeatured] = useState<Movie[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
+  const [movieGenreIds, setMovieGenreIds] = useState<Set<number>>(new Set());
+  const [tvGenreIds, setTvGenreIds] = useState<Set<number>>(new Set());
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
@@ -40,6 +42,8 @@ export default function MovieHome() {
   const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [heroIdx, setHeroIdx] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => { loadCategory('trending'); loadFeatured(); loadGenres(); }, []);
@@ -56,43 +60,78 @@ export default function MovieHome() {
 
   async function loadGenres() {
     const [mg, tg] = await Promise.all([fetchGenres('movie'), fetchGenres('tv')]);
+    setMovieGenreIds(new Set(mg.map(g => g.id)));
+    setTvGenreIds(new Set(tg.map(g => g.id)));
     const merged = [...mg, ...tg.filter(g => !mg.find(m => m.id === g.id))];
     setGenres(merged);
   }
 
-  async function loadCategory(catId: string) {
+  async function loadCategory(catId: string, pageNum = 1) {
     setLoading(true);
     setSelectedGenre(null);
     setSearchQuery('');
     setSearchResults([]);
+    setPage(pageNum);
     const cat = CATEGORIES.find(c => c.id === catId);
     if (cat) {
-      const data = await cat.fetch();
+      const data = await cat.fetch(pageNum);
       setMovies(data);
+      setTotalPages(data.totalPages ?? 1);
       setMediaType(catId.endsWith('_tv') ? 'tv' : 'movie');
     }
     setLoading(false);
   }
 
-  async function loadGenreMovies(genreId: number) {
+  // A genre id can belong to movies, TV, or both (TMDB uses separate genre
+  // lists per media type, and several ids only exist on one side, e.g.
+  // "Action & Adventure" is TV-only). Fetching with a single, possibly wrong
+  // mediaType returned empty/incorrect results, which looked like genre
+  // filtering being broken. Fetch from whichever type(s) actually have it.
+  async function loadGenreMovies(genreId: number, pageNum = 1) {
     setLoading(true);
     setSelectedGenre(genreId);
     setActiveCategory('');
-    const data = await fetchByGenre(mediaType, genreId);
-    setMovies(data);
+    setPage(pageNum);
+    const types: MediaType[] = [];
+    if (movieGenreIds.has(genreId)) types.push('movie');
+    if (tvGenreIds.has(genreId)) types.push('tv');
+    if (types.length === 0) types.push(mediaType);
+    const results = await Promise.all(types.map(t => fetchByGenre(t, genreId, pageNum)));
+    const merged = results.flat().sort((a, b) => b.popularity - a.popularity);
+    setMovies(merged);
+    setTotalPages(Math.max(1, ...results.map(r => r.totalPages ?? 1)));
     setLoading(false);
   }
 
   function handleSearch(q: string) {
     setSearchQuery(q);
     clearTimeout(searchTimeout.current);
-    if (!q.trim()) { setSearchResults([]); return; }
+    if (!q.trim()) { setSearchResults([]); setTotalPages(1); return; }
     setSearching(true);
     searchTimeout.current = setTimeout(async () => {
-      const results = await searchMovies(q);
+      setPage(1);
+      const results = await searchMovies(q, 1);
       setSearchResults(results);
+      setTotalPages(results.totalPages ?? 1);
       setSearching(false);
     }, 400);
+  }
+
+  async function goToPage(p: number) {
+    if (p < 1 || p > totalPages || p === page) return;
+    if (searchQuery) {
+      setSearching(true);
+      setPage(p);
+      const results = await searchMovies(searchQuery, p);
+      setSearchResults(results);
+      setTotalPages(results.totalPages ?? 1);
+      setSearching(false);
+    } else if (selectedGenre) {
+      await loadGenreMovies(selectedGenre, p);
+    } else {
+      await loadCategory(activeCategory || 'trending', p);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   const hero = featured[heroIdx];
@@ -180,7 +219,7 @@ export default function MovieHome() {
             onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
           />
           {searchQuery && (
-            <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} style={{
+            <button onClick={() => { setSearchQuery(''); setSearchResults([]); setPage(1); setTotalPages(1); }} style={{
               position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
               background: 'none', border: 'none', color: 'var(--text3)', display: 'flex', padding: 2,
             }}><X size={14} /></button>
@@ -321,8 +360,53 @@ export default function MovieHome() {
               ))}
             </div>
           )}
+
+          {!loading && !searching && displayMovies.length > 0 && totalPages > 1 && (
+            <Pagination page={page} totalPages={totalPages} onChange={goToPage} />
+          )}
         </main>
       </div>
+    </div>
+  );
+}
+
+function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
+  const capped = Math.min(totalPages, 500);
+  const pages: (number | '...')[] = [];
+  const add = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+  add(1);
+  for (let p = page - 1; p <= page + 1; p++) if (p > 1 && p < capped) add(p);
+  add(capped);
+  const withDots: (number | '...')[] = [];
+  let prev = 0;
+  for (const p of pages.sort((a, b) => (a as number) - (b as number))) {
+    if (prev && (p as number) - prev > 1) withDots.push('...');
+    withDots.push(p);
+    prev = p as number;
+  }
+
+  const btnStyle = (active = false): React.CSSProperties => ({
+    minWidth: 32, height: 32, padding: '0 8px', borderRadius: 7,
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    background: active ? 'var(--accent)' : 'var(--surface)',
+    color: active ? '#fff' : 'var(--text2)',
+    fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  });
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 24, flexWrap: 'wrap' }}>
+      <button onClick={() => onChange(page - 1)} disabled={page <= 1} style={{ ...btnStyle(), opacity: page <= 1 ? 0.4 : 1, cursor: page <= 1 ? 'default' : 'pointer' }}>
+        <ChevronLeft size={14} />
+      </button>
+      {withDots.map((p, i) => p === '...' ? (
+        <span key={`dots-${i}`} style={{ color: 'var(--text3)', padding: '0 4px', fontSize: '0.8rem' }}>…</span>
+      ) : (
+        <button key={p} onClick={() => onChange(p as number)} style={btnStyle(p === page)}>{p}</button>
+      ))}
+      <button onClick={() => onChange(page + 1)} disabled={page >= capped} style={{ ...btnStyle(), opacity: page >= capped ? 0.4 : 1, cursor: page >= capped ? 'default' : 'pointer' }}>
+        <ChevronRight size={14} />
+      </button>
     </div>
   );
 }

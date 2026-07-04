@@ -30,17 +30,6 @@ import type { EnrichedMatch, Stream } from "../types";
 // Auto-retry delay when an iframe errors — tries the next stream after this many ms
 const AUTO_RETRY_MS = 3_000;
 
-// Used only to decide whether the iframe src is routed through /embed-proxy —
-// TV browsers enforce X-Frame-Options/CSP frame-ancestors strictly and block
-// third-party sports embeds outright, while desktop/mobile tolerate them fine.
-function isTVBrowser(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  return /TV|Tizen|SmartTV|SMART-TV|WebOS|Web0S|NetCast|HbbTV|VIDAA|BRAVIA|AFTT|AFTB|AFTN|AFTA|AFTS|AFTM|GoogleTV|CrKey|Roku|ADT-G3|Hisense|Philips TV|Panasonic TV/i.test(
-    ua,
-  );
-}
-
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString([], {
     month: "short",
@@ -67,7 +56,6 @@ export default function Watch() {
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isTV] = useState(isTVBrowser);
   const [showStreamList, setShowStreamList] = useState(true);
   const [liveMatches, setLiveMatches] = useState<EnrichedMatch[]>([]);
   const playerWrapRef = useRef<HTMLDivElement>(null);
@@ -869,7 +857,12 @@ export default function Watch() {
                 <iframe
                   key={activeStream.embedUrl}
                   ref={iframeRef}
-                  src={isTV ? proxiedEmbedUrl(activeStream.embedUrl) : activeStream.embedUrl}
+                  src={proxiedEmbedUrl(
+                    activeStream.embedUrl,
+                    activeStream.source === "DaddyLive"
+                      ? "https://daddylive.eu/"
+                      : "https://streamed.pk/",
+                  )}
                   style={{
                     position: "absolute",
                     inset: 0,
@@ -880,6 +873,7 @@ export default function Watch() {
                   }}
                   allowFullScreen
                   allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                  referrerPolicy="no-referrer"
                   onError={handleIframeError}
                 />
               ) : null}

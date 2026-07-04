@@ -44,10 +44,29 @@ export default function Home() {
       if (gen !== fetchGenRef.current) return;
       setAllMatches(firstMatches);
       setLoading(false);
+      cacheMatchesForLater(firstMatches);
     });
     if (gen !== fetchGenRef.current) return;
     setAllMatches(merged);
     setLoading(false);
+    cacheMatchesForLater(merged);
+  }
+
+  // The sports APIs only return currently live/upcoming matches — finished
+  // ones drop off the list within a short window and can never be looked up
+  // by id again upstream. To honour deep links to matches that have since
+  // ended, we snapshot every match this browser has ever seen listed here
+  // into localStorage, so Watch.tsx can still resolve it later. Only works
+  // for matches this browser previously loaded on this page — a completely
+  // fresh device/browser with no prior visit still can't recover a match
+  // the upstream API has already dropped, since neither API exposes a
+  // lookup-by-id endpoint for historical matches.
+  function cacheMatchesForLater(matches: EnrichedMatch[]) {
+    try {
+      for (const m of matches) {
+        localStorage.setItem(`match_${m.id}`, JSON.stringify(m));
+      }
+    } catch { /* storage full/unavailable, non-fatal */ }
   }
 
   async function handleRefresh() {

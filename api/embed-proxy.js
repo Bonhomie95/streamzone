@@ -58,12 +58,23 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid URL" });
   }
 
+  let refererUrl = `${target.protocol}//${target.hostname}/`;
+  const rawRef = req.query.ref;
+  if (rawRef && typeof rawRef === "string") {
+    try {
+      const parsedRef = new URL(rawRef);
+      if (parsedRef.protocol === "https:" || parsedRef.protocol === "http:") {
+        refererUrl = parsedRef.toString();
+      }
+    } catch { /* keep default */ }
+  }
+
   try {
     const upstream = await fetch(target.toString(), {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Referer: `${target.protocol}//${target.hostname}/`,
+        Referer: refererUrl,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       },

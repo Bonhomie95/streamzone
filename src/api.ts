@@ -150,11 +150,16 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
 
 // Wraps a third-party embed URL so it's fetched same-origin through
 // /embed-proxy, which strips X-Frame-Options / CSP frame-ancestors headers.
-// Smart TV browsers enforce those headers strictly and silently block the
-// iframe; desktop/mobile browsers don't need this, so callers should only
-// use it once a TV UA is detected.
-export function proxiedEmbedUrl(url: string): string {
-  return `/embed-proxy?url=${encodeURIComponent(url)}`;
+// `parentSite` should be the domain that legitimately embeds this stream
+// (e.g. "https://streamed.pk/" or "https://daddylive.eu/") — many stream
+// hosts 404/block requests whose Referer isn't their known embedding
+// parent, as basic anti-leech protection, so this matters even though the
+// framing block is a separate issue.
+export function proxiedEmbedUrl(url: string, parentSite?: string): string {
+  const q = `url=${encodeURIComponent(url)}`;
+  return parentSite
+    ? `/embed-proxy?${q}&ref=${encodeURIComponent(parentSite)}`
+    : `/embed-proxy?${q}`;
 }
 
 // getDaddyStreams extracts the embedded stream URLs from a DaddyLive match.
@@ -441,61 +446,82 @@ async function tmdbGet(path: string, params: Record<string, string> = {}) {
   return res.json();
 }
 
+// Paginated results are returned as a plain Movie[] with a `totalPages`
+// property attached, so existing callers that only care about the array
+// (e.g. `.slice(0, 6)`) keep working unchanged, while callers that need
+// paging info (MovieHome) can read `results.totalPages`.
+export type PagedMovies = Movie[] & { totalPages: number };
+
+function toPaged(results: Movie[], data: any): PagedMovies {
+  const paged = results as PagedMovies;
+  paged.totalPages = Math.max(1, Math.min(data?.total_pages ?? 1, 500));
+  return paged;
+}
+
 export async function fetchTrending(
   type: MediaType = "movie",
-): Promise<Movie[]> {
-  const data = await tmdbGet(`/trending/${type}/week`);
-  return (data.results ?? []).map((m: any) => normaliseMovie(m, type));
+  page = 1,
+): Promise<PagedMovies> {
+  const data = await tmdbGet(`/trending/${type}/week`, { page: String(page) });
+  return toPaged((data.results ?? []).map((m: any) => normaliseMovie(m, type)), data);
 }
 
 export async function fetchPopular(
   type: MediaType = "movie",
-): Promise<Movie[]> {
-  const data = await tmdbGet(`/${type}/popular`);
-  return (data.results ?? []).map((m: any) => normaliseMovie(m, type));
+  page = 1,
+): Promise<PagedMovies> {
+  const data = await tmdbGet(`/${type}/popular`, { page: String(page) });
+  return toPaged((data.results ?? []).map((m: any) => normaliseMovie(m, type)), data);
 }
 
 export async function fetchTopRated(
   type: MediaType = "movie",
-): Promise<Movie[]> {
-  const data = await tmdbGet(`/${type}/top_rated`);
-  return (data.results ?? []).map((m: any) => normaliseMovie(m, type));
+  page = 1,
+): Promise<PagedMovies> {
+  const data = await tmdbGet(`/${type}/top_rated`, { page: String(page) });
+  return toPaged((data.results ?? []).map((m: any) => normaliseMovie(m, type)), data);
 }
 
-export async function fetchNowPlaying(): Promise<Movie[]> {
-  const data = await tmdbGet("/movie/now_playing");
-  return (data.results ?? []).map((m: any) => normaliseMovie(m, "movie"));
+export async function fetchNowPlaying(page = 1): Promise<PagedMovies> {
+  const data = await tmdbGet("/movie/now_playing", { page: String(page) });
+  return toPaged((data.results ?? []).map((m: any) => normaliseMovie(m, "movie")), data);
 }
 
-export async function fetchUpcomingMovies(): Promise<Movie[]> {
-  const data = await tmdbGet("/movie/upcoming");
-  return (data.results ?? []).map((m: any) => normaliseMovie(m, "movie"));
+export async function fetchUpcomingMovies(page = 1): Promise<PagedMovies> {
+  const data = await tmdbGet("/movie/upcoming", { page: String(page) });
+  return toPaged((data.results ?? []).map((m: any) => normaliseMovie(m, "movie")), data);
 }
 
 export async function fetchByGenre(
   type: MediaType,
   genreId: number,
   page = 1,
-): Promise<Movie[]> {
+): Promise<PagedMovies> {
   const data = await tmdbGet(`/discover/${type}`, {
     with_genres: String(genreId),
     page: String(page),
     sort_by: "popularity.desc",
   });
-  return (data.results ?? []).map((m: any) => normaliseMovie(m, type));
+  return toPaged((data.results ?? []).map((m: any) => normaliseMovie(m, type)), data);
 }
 
-export async function searchMovies(query: string): Promise<Movie[]> {
-  if (!query.trim()) return [];
+export async function searchMovies(query: string, page = 1): Promise<PagedMovies> {
+  if (!query.trim()) {
+    const empty = [] as unknown as PagedMovies;
+    empty.totalPages = 1;
+    return empty;
+  }
   const [movies, tv] = await Promise.all([
-    tmdbGet("/search/movie", { query }),
-    tmdbGet("/search/tv", { query }),
+    tmdbGet("/search/movie", { query, page: String(page) }),
+    tmdbGet("/search/tv", { query, page: String(page) }),
   ]);
   const results = [
     ...(movies.results ?? []).map((m: any) => normaliseMovie(m, "movie")),
     ...(tv.results ?? []).map((m: any) => normaliseMovie(m, "tv")),
   ];
-  return results.sort((a, b) => b.popularity - a.popularity);
+  results.sort((a, b) => b.popularity - a.popularity);
+  const totalPages = Math.max(movies.total_pages ?? 1, tv.total_pages ?? 1);
+  return toPaged(results, { total_pages: totalPages });
 }
 
 export async function fetchMovieDetails(tmdbId: number, type: MediaType) {
