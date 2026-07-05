@@ -14,13 +14,13 @@ import {
   Film,
   Share2,
   Check,
+  Tv,
 } from "lucide-react";
 import {
   fetchStreams,
   fetchAllMatches,
   badgeUrl,
   getDaddyStreams,
-  proxiedEmbedUrl,
 } from "../api";
 import MatchCard from "../components/MatchCard";
 import ViewerBadge from "../components/ViewerBadge";
@@ -29,6 +29,25 @@ import type { EnrichedMatch, Stream } from "../types";
 
 // Auto-retry delay when an iframe errors — tries the next stream after this many ms
 const AUTO_RETRY_MS = 3_000;
+// If an iframe never fires onload within this window, assume it's silently
+// blocked (CSP/X-Frame-Options blocks don't trigger onError) and fall back
+// to direct mode instead of leaving the user staring at a blank player.
+const LOAD_WATCHDOG_MS = 5_000;
+
+// ─── TV detection ──────────────────────────────────────────────────
+// Smart TV browsers (Tizen, webOS, Fire TV's Silk/AFT, Android TV/Google TV,
+// HbbTV, VIDAA, etc.) frequently apply stricter cross-origin iframe policies
+// than mobile/desktop, which causes third-party embed pages to fail silently
+// inside an <iframe> even with no explicit sandbox attribute set. Rather than
+// fight those per-vendor quirks, we detect TV UAs and skip the iframe
+// entirely — the stream opens as a normal top-level page instead.
+function detectIsTV(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /TV|Tizen|SmartTV|SMART-TV|WebOS|Web0S|NetCast|HbbTV|VIDAA|BRAVIA|AFTT|AFTB|AFTN|AFTA|AFTS|AFTM|GoogleTV|CrKey|Roku|ADT-G3|Hisense|Philips TV|Panasonic TV/i.test(
+    ua,
+  );
+}
 
 function formatDate(ms: number) {
   return new Date(ms).toLocaleString([], {
@@ -56,12 +75,52 @@ export default function Watch() {
   const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // "direct mode" = skip the iframe, show a Tap-to-Watch card that navigates
+  // top-level instead. UA sniffing alone misses plenty of TVs (reduced/generic
+  // UA strings on newer Tizen/webOS firmware), so this is seeded from UA
+  // detection but can also be set by a load-watchdog (iframe blocked via CSP/
+  // X-Frame-Options never fires onError, it just stays blank — only a missed
+  // onload tells us) or by the user manually via the "Trouble loading?" link.
+  // Once learned for this browser, it's remembered so we never show the
+  // iframe error flicker again on a known-bad device.
+  const DIRECT_MODE_KEY = "sz_direct_mode";
+  const [isTV, setIsTV] = useState(() => {
+    try {
+      const stored = localStorage.getItem(DIRECT_MODE_KEY);
+      if (stored === "1") return true;
+      if (stored === "0") return false;
+    } catch {
+      /* noop */
+    }
+    return detectIsTV();
+  });
+  const iframeLoadedRef = useRef(false);
+  const loadWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function setDirectMode(on: boolean) {
+    setIsTV(on);
+    try {
+      localStorage.setItem(DIRECT_MODE_KEY, on ? "1" : "0");
+    } catch {
+      /* noop */
+    }
+  }
+
   const [showStreamList, setShowStreamList] = useState(true);
   const [liveMatches, setLiveMatches] = useState<EnrichedMatch[]>([]);
   const playerWrapRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // A direct iframe to a third-party embed is genuinely cross-origin — we
+  // have no visibility into its content, so a stream that loads the page
+  // fine but then fails internally (dead upstream CDN, backend 503, expired
+  // token) is invisible to both `onError` (page loaded fine) and the load
+  // watchdog (onload fired fine). The only honest fix is a fast, low-friction
+  // manual escape hatch rather than pretending to auto-detect it.
+  const [showSwitchHint, setShowSwitchHint] = useState(false);
+  const switchHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── Load match ──────────────────────────────────────────────────
   useEffect(() => {
@@ -120,17 +179,6 @@ export default function Watch() {
     loadStreams(match);
   }, [match]);
 
-  // If a match is upcoming or just finished and no streams were found yet,
-  // keep retrying — sources often populate the URL shortly before kickoff
-  // or keep it live briefly after the scheduled end, regardless of status.
-  useEffect(() => {
-    if (!match) return;
-    if (loadingStreams || streams.length > 0) return;
-    if (match.status === "live") return; // already tried hard enough
-    const t = setInterval(() => loadStreams(match), 30_000);
-    return () => clearInterval(t);
-  }, [match, loadingStreams, streams.length]);
-
   // ─── Load live rail via the race API (fix: was calling both APIs separately) ──
   useEffect(() => {
     async function loadLive() {
@@ -152,11 +200,14 @@ export default function Watch() {
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
-      ) return;
+      )
+        return;
 
       if (streams.length === 0 || !activeStream) return;
 
-      const idx = streams.findIndex((s) => s.embedUrl === activeStream.embedUrl);
+      const idx = streams.findIndex(
+        (s) => s.embedUrl === activeStream.embedUrl,
+      );
 
       if (e.key === "ArrowRight" || e.key === "n" || e.key === "N") {
         e.preventDefault();
@@ -220,6 +271,9 @@ export default function Watch() {
     setActiveStream(s);
     setIframeError(false);
     setRetryCountdown(null);
+    setShowSwitchHint(false);
+    if (switchHintTimerRef.current) clearTimeout(switchHintTimerRef.current);
+    iframeLoadedRef.current = false;
   }
 
   // ─── Auto-retry on iframe error ───────────────────────────────────
@@ -237,7 +291,9 @@ export default function Watch() {
 
     if (!activeStream) return;
     const currentStreams = streams; // capture at call time
-    const idx = currentStreams.findIndex((s) => s.embedUrl === activeStream.embedUrl);
+    const idx = currentStreams.findIndex(
+      (s) => s.embedUrl === activeStream.embedUrl,
+    );
     const nextStream = currentStreams[idx + 1] ?? null;
     if (!nextStream) return; // no more streams to try
 
@@ -263,19 +319,57 @@ export default function Watch() {
   // Clean up timers on unmount
   useEffect(() => () => clearRetryTimers(), []);
 
+  // ─── Load watchdog ─────────────────────────────────────────────────
+  // Iframes blocked by CSP frame-ancestors or X-Frame-Options never fire
+  // `onError` — they just render blank forever. The only signal we get is a
+  // missing `onload`. If it doesn't fire within LOAD_WATCHDOG_MS, assume the
+  // embed is blocked, switch to direct mode, and remember that for this
+  // browser so we never sit on a blank iframe again.
+  useEffect(() => {
+    if (isTV || !activeStream) return; // already in direct mode, nothing to watch
+    iframeLoadedRef.current = false;
+    if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
+    loadWatchdogRef.current = setTimeout(() => {
+      if (!iframeLoadedRef.current) setDirectMode(true);
+    }, LOAD_WATCHDOG_MS);
+    return () => {
+      if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
+    };
+  }, [activeStream, isTV]);
+
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
+  // Show "having trouble?" 8s after a stream is activated, regardless of
+  // whether onload/onerror fired — those two signals can't detect a page
+  // that loaded fine but is internally dead (see note above the state decl).
+  useEffect(() => {
+    setShowSwitchHint(false);
+    if (switchHintTimerRef.current) clearTimeout(switchHintTimerRef.current);
+    if (activeStream && !iframeError) {
+      switchHintTimerRef.current = setTimeout(() => setShowSwitchHint(true), 8_000);
+    }
+    return () => {
+      if (switchHintTimerRef.current) clearTimeout(switchHintTimerRef.current);
+    };
+  }, [activeStream, iframeError]);
+
   // ─── Dynamic page title + JSON-LD structured data ─────────────────
   useEffect(() => {
     if (!match) return;
-    const teams = match.teams?.home && match.teams?.away
-      ? `${match.teams.home.name} vs ${match.teams.away.name}`
-      : match.title;
-    const statusLabel = match.status === "live" ? " — LIVE" : match.status === "upcoming" ? " — Upcoming" : "";
+    const teams =
+      match.teams?.home && match.teams?.away
+        ? `${match.teams.home.name} vs ${match.teams.away.name}`
+        : match.title;
+    const statusLabel =
+      match.status === "live"
+        ? " — LIVE"
+        : match.status === "upcoming"
+          ? " — Upcoming"
+          : "";
     document.title = `${teams}${statusLabel} | StreamZone`;
 
     // Inject SportsEvent JSON-LD
@@ -290,21 +384,31 @@ export default function Watch() {
     el.textContent = JSON.stringify({
       "@context": "https://schema.org",
       "@type": "SportsEvent",
-      "name": teams,
-      "description": `Watch ${teams} live on StreamZone`,
-      "startDate": new Date(match.date).toISOString(),
-      "eventStatus": match.status === "live"
-        ? "https://schema.org/EventScheduled"
-        : match.status === "finished"
-          ? "https://schema.org/EventPostponed"
-          : "https://schema.org/EventScheduled",
-      "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
-      "location": { "@type": "VirtualLocation", "url": `https://stream-zone.xyz/watch/${encodeURIComponent(match.id)}` },
-      "organizer": { "@type": "Organization", "name": "StreamZone", "url": "https://stream-zone.xyz" },
-      ...(match.teams?.home && match.teams?.away ? {
-        "homeTeam": { "@type": "SportsTeam", "name": match.teams.home.name },
-        "awayTeam": { "@type": "SportsTeam", "name": match.teams.away.name },
-      } : {}),
+      name: teams,
+      description: `Watch ${teams} live on StreamZone`,
+      startDate: new Date(match.date).toISOString(),
+      eventStatus:
+        match.status === "live"
+          ? "https://schema.org/EventScheduled"
+          : match.status === "finished"
+            ? "https://schema.org/EventPostponed"
+            : "https://schema.org/EventScheduled",
+      eventAttendanceMode: "https://schema.org/OnlineEventAttendanceMode",
+      location: {
+        "@type": "VirtualLocation",
+        url: `https://stream-zone.xyz/watch/${encodeURIComponent(match.id)}`,
+      },
+      organizer: {
+        "@type": "Organization",
+        name: "StreamZone",
+        url: "https://stream-zone.xyz",
+      },
+      ...(match.teams?.home && match.teams?.away
+        ? {
+            homeTeam: { "@type": "SportsTeam", name: match.teams.home.name },
+            awayTeam: { "@type": "SportsTeam", name: match.teams.away.name },
+          }
+        : {}),
     });
 
     return () => {
@@ -317,14 +421,20 @@ export default function Watch() {
   const [shareCopied, setShareCopied] = useState(false);
 
   async function handleShare() {
-    const teams = match?.teams?.home && match?.teams?.away
-      ? `${match.teams.home.name} vs ${match.teams.away.name}`
-      : match?.title ?? "Match";
+    const teams =
+      match?.teams?.home && match?.teams?.away
+        ? `${match.teams.home.name} vs ${match.teams.away.name}`
+        : (match?.title ?? "Match");
     const url = window.location.href;
     const shareData = { title: `${teams} — StreamZone`, url };
 
     if (navigator.share) {
-      try { await navigator.share(shareData); return; } catch { /* user dismissed */ }
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch {
+        /* user dismissed */
+      }
     }
     // Fallback: copy to clipboard
     try {
@@ -636,11 +746,17 @@ export default function Watch() {
           <button
             onClick={handleShare}
             style={{
-              display: "inline-flex", alignItems: "center", gap: 5,
-              background: "var(--surface)", border: "1px solid var(--border)",
-              borderRadius: "var(--radius)", padding: "5px 12px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: "5px 12px",
               color: shareCopied ? "var(--green)" : "var(--text2)",
-              fontSize: "0.75rem", fontWeight: 500, cursor: "pointer",
+              fontSize: "0.75rem",
+              fontWeight: 500,
+              cursor: "pointer",
               marginLeft: "auto",
             }}
           >
@@ -731,7 +847,14 @@ export default function Watch() {
                       <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>
                         Match not live yet
                       </span>
-                      <span style={{ fontSize: "0.75rem", color: "var(--text3)", textAlign: "center", maxWidth: 260 }}>
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          color: "var(--text3)",
+                          textAlign: "center",
+                          maxWidth: 260,
+                        }}
+                      >
                         Streams will be available once this match goes live
                       </span>
                     </>
@@ -741,10 +864,10 @@ export default function Watch() {
                       <span style={{ fontSize: "0.9rem" }}>
                         No streams available
                       </span>
-                      <span style={{ fontSize: "0.75rem", color: "var(--text3)" }}>
-                        {match?.status === "finished"
-                          ? "Still checking sources — a link may appear shortly"
-                          : "Check back when the match goes live"}
+                      <span
+                        style={{ fontSize: "0.75rem", color: "var(--text3)" }}
+                      >
+                        Check back when the match goes live
                       </span>
                     </>
                   )}
@@ -853,31 +976,160 @@ export default function Watch() {
                     </div>
                   </div>
                 </div>
-              ) : activeStream ? (
-                <iframe
-                  key={activeStream.embedUrl}
-                  ref={iframeRef}
-                  src={proxiedEmbedUrl(
-                    activeStream.embedUrl,
-                    activeStream.source === "DaddyLive"
-                      ? "https://daddylive.eu/"
-                      : "https://streamed.pk/",
-                  )}
+              ) : activeStream && isTV ? (
+                <div
                   style={{
                     position: "absolute",
                     inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    border: "none",
-                    display: "block",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 18,
+                    background: "var(--bg2)",
+                    textAlign: "center",
+                    padding: "0 24px",
                   }}
-                  allowFullScreen
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-                  referrerPolicy="no-referrer"
-                  onError={handleIframeError}
-                />
+                >
+                  <Tv size={48} strokeWidth={1.2} color="var(--accent)" />
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "1rem",
+                        fontWeight: 700,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Ready to watch on TV
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.8rem",
+                        color: "var(--text3)",
+                        maxWidth: 320,
+                      }}
+                    >
+                      {activeStream.source} · Stream #{activeStream.streamNo}
+                      {activeStream.hd ? " · HD" : ""}
+                    </div>
+                  </div>
+                  <button
+                    autoFocus
+                    onClick={() => {
+                      window.location.href = activeStream.embedUrl;
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      background: "var(--accent)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "12px 28px",
+                      fontSize: "1rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Tap to Watch
+                  </button>
+                  {streams.length > 1 && (
+                    <div style={{ fontSize: "0.72rem", color: "var(--text3)" }}>
+                      Pick a different source from the list below if this one
+                      doesn't load
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setDirectMode(false)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--text3)",
+                      fontSize: "0.7rem",
+                      textDecoration: "underline",
+                      cursor: "pointer",
+                      marginTop: 4,
+                    }}
+                  >
+                    Try the embedded player instead
+                  </button>
+                </div>
+              ) : activeStream ? (
+                <>
+                  <iframe
+                    key={activeStream.embedUrl}
+                    ref={iframeRef}
+                    src={activeStream.embedUrl}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      border: "none",
+                      display: "block",
+                    }}
+                    allowFullScreen
+                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                    onLoad={() => {
+                      iframeLoadedRef.current = true;
+                      if (loadWatchdogRef.current)
+                        clearTimeout(loadWatchdogRef.current);
+                    }}
+                    onError={handleIframeError}
+                  />
+                  {showSwitchHint && (() => {
+                    const idx = streams.findIndex((s) => s.embedUrl === activeStream.embedUrl);
+                    const next = streams[idx + 1] ?? streams[0];
+                    return (
+                      <button
+                        onClick={() => next && switchStream(next)}
+                        style={{
+                          position: "absolute",
+                          bottom: 12,
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          background: "rgba(20,20,24,0.92)",
+                          border: "1px solid var(--border2)",
+                          borderRadius: 20,
+                          padding: "8px 16px",
+                          color: "#fff",
+                          fontSize: "0.78rem",
+                          fontWeight: 600,
+                          zIndex: 3,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Nothing playing? Try another source
+                      </button>
+                    );
+                  })()}
+                </>
               ) : null}
             </div>
+
+            {/* Manual escape hatch — covers TVs/devices that detection misses */}
+            {activeStream && !isTV && (
+              <button
+                onClick={() => setDirectMode(true)}
+                style={{
+                  alignSelf: "center",
+                  background: "none",
+                  border: "none",
+                  color: "var(--text3)",
+                  fontSize: "0.72rem",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  padding: "2px 0",
+                }}
+              >
+                Player stuck or blank on a TV? Tap here to open the stream
+                directly
+              </button>
+            )}
 
             {/* Active stream info bar */}
             {activeStream && (
@@ -1143,104 +1395,109 @@ function TopBar({ onBack }: { onBack: () => void }) {
         flexShrink: 0,
       }}
     >
-        <button
-          onClick={onBack}
+      <button
+        onClick={onBack}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          padding: "6px 12px",
+          color: "var(--text2)",
+          fontSize: "0.82rem",
+          fontWeight: 500,
+          flexShrink: 0,
+        }}
+      >
+        <ArrowLeft size={14} /> Back
+      </button>
+
+      <button
+        onClick={() => nav("/")}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          flexShrink: 0,
+        }}
+      >
+        <img
+          src="/logo.png"
+          alt="StreamZone"
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
+            height: 34,
+            width: 34,
+            objectFit: "contain",
             borderRadius: 8,
-            padding: "6px 12px",
-            color: "var(--text2)",
-            fontSize: "0.82rem",
-            fontWeight: 500,
-            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontFamily: "Bebas Neue",
+            fontSize: "clamp(1.2rem, 1.8vw, 2.2rem)",
+            letterSpacing: "0.08em",
+            color: "var(--text)",
           }}
         >
-          <ArrowLeft size={14} /> Back
-        </button>
+          STREAM<span style={{ color: "var(--accent)" }}>ZONE</span>
+        </span>
+      </button>
 
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 3,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          padding: 3,
+        }}
+      >
         <button
           onClick={() => nav("/")}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            background: "none",
+            gap: 5,
+            padding: "5px 11px",
+            borderRadius: 7,
             border: "none",
+            background: "var(--accent)",
+            color: "#fff",
+            fontSize: "0.78rem",
+            fontWeight: 700,
             cursor: "pointer",
-            padding: 0,
-            flexShrink: 0,
           }}
         >
-          <img
-            src="/logo.png"
-            alt="StreamZone"
-            style={{ height: 34, width: 34, objectFit: "contain", borderRadius: 8 }}
-          />
-          <span
-            style={{
-              fontFamily: "Bebas Neue",
-              fontSize: "clamp(1.2rem, 1.8vw, 2.2rem)",
-              letterSpacing: "0.08em",
-              color: "var(--text)",
-            }}
-          >
-            STREAM<span style={{ color: "var(--accent)" }}>ZONE</span>
-          </span>
+          <Trophy size={12} /> Sports
         </button>
-
-        <div
+        <button
+          onClick={() => nav("/movies")}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 3,
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            padding: 3,
+            gap: 5,
+            padding: "5px 11px",
+            borderRadius: 7,
+            border: "none",
+            background: "transparent",
+            color: "var(--text2)",
+            fontSize: "0.78rem",
+            fontWeight: 400,
+            cursor: "pointer",
           }}
         >
-          <button
-            onClick={() => nav("/")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "5px 11px",
-              borderRadius: 7,
-              border: "none",
-              background: "var(--accent)",
-              color: "#fff",
-              fontSize: "0.78rem",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            <Trophy size={12} /> Sports
-          </button>
-          <button
-            onClick={() => nav("/movies")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "5px 11px",
-              borderRadius: 7,
-              border: "none",
-              background: "transparent",
-              color: "var(--text2)",
-              fontSize: "0.78rem",
-              fontWeight: 400,
-              cursor: "pointer",
-            }}
-          >
-            <Film size={12} /> Movies
-          </button>
-        </div>
+          <Film size={12} /> Movies
+        </button>
       </div>
+    </div>
   );
 }
 
@@ -1370,10 +1627,38 @@ function StreamSidebar({
 }) {
   if (loading) {
     return (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 16 }}>
-        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>Stream Sources</div>
+      <div
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            fontSize: "0.72rem",
+            fontWeight: 700,
+            color: "var(--text3)",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            marginBottom: 12,
+          }}
+        >
+          Stream Sources
+        </div>
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} style={{ height: 46, borderRadius: 8, background: "var(--surface2)", marginBottom: 6, animation: "shimmer 1.4s infinite", animationDelay: `${i * 0.1}s` }} />
+          <div
+            key={i}
+            style={{
+              height: 46,
+              borderRadius: 8,
+              background: "var(--surface2)",
+              marginBottom: 6,
+              animation: "shimmer 1.4s infinite",
+              animationDelay: `${i * 0.1}s`,
+            }}
+          />
         ))}
         <style>{`@keyframes shimmer { 0%,100%{opacity:.4} 50%{opacity:.8} }`}</style>
       </div>
@@ -1382,7 +1667,16 @@ function StreamSidebar({
 
   if (streams.length === 0) {
     return (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 24, textAlign: "center", color: "var(--text3)" }}>
+      <div
+        style={{
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          padding: 24,
+          textAlign: "center",
+          color: "var(--text3)",
+        }}
+      >
         <WifiOff size={28} strokeWidth={1.2} style={{ margin: "0 auto 8px" }} />
         <div style={{ fontSize: "0.82rem" }}>No streams yet</div>
       </div>
@@ -1397,11 +1691,29 @@ function StreamSidebar({
     groups[key].push(s);
   }
   const groupEntries = Object.entries(groups);
-  const globalIdx = (s: Stream) => streams.findIndex((x) => x.embedUrl === s.embedUrl);
+  const globalIdx = (s: Stream) =>
+    streams.findIndex((x) => x.embedUrl === s.embedUrl);
 
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}>
-      <div style={{ padding: "12px 14px 8px", fontSize: "0.68rem", fontWeight: 700, color: "var(--text3)", letterSpacing: "0.1em", textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>
+    <div
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          padding: "12px 14px 8px",
+          fontSize: "0.68rem",
+          fontWeight: 700,
+          color: "var(--text3)",
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
         {streams.length} Stream{streams.length !== 1 ? "s" : ""} Available
       </div>
       <div
@@ -1423,7 +1735,18 @@ function StreamSidebar({
           <div key={sourceName}>
             {/* Source group header — only show if more than one source group */}
             {groupEntries.length > 1 && (
-              <div style={{ padding: "8px 14px 4px", fontSize: "0.62rem", fontWeight: 700, color: "var(--text3)", letterSpacing: "0.08em", textTransform: "uppercase", background: "var(--surface2)", borderBottom: "0.5px solid var(--border)" }}>
+              <div
+                style={{
+                  padding: "8px 14px 4px",
+                  fontSize: "0.62rem",
+                  fontWeight: 700,
+                  color: "var(--text3)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  background: "var(--surface2)",
+                  borderBottom: "0.5px solid var(--border)",
+                }}
+              >
                 {sourceName}
               </div>
             )}
@@ -1435,16 +1758,34 @@ function StreamSidebar({
                   key={i}
                   onClick={() => onSwitch(s)}
                   style={{
-                    width: "100%", display: "flex", alignItems: "center", gap: 10,
-                    padding: "11px 14px", border: "none", textAlign: "left",
-                    background: isActive ? "rgba(230,57,70,0.08)" : "transparent",
-                    borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "11px 14px",
+                    border: "none",
+                    textAlign: "left",
+                    background: isActive
+                      ? "rgba(230,57,70,0.08)"
+                      : "transparent",
+                    borderLeft: isActive
+                      ? "2px solid var(--accent)"
+                      : "2px solid transparent",
                     borderBottom: "1px solid var(--border)",
                     color: isActive ? "var(--text)" : "var(--text2)",
-                    cursor: "pointer", transition: "background 0.15s",
+                    cursor: "pointer",
+                    transition: "background 0.15s",
                   }}
-                  onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--surface2)"; }}
-                  onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  onMouseEnter={(e) => {
+                    if (!isActive)
+                      (e.currentTarget as HTMLElement).style.background =
+                        "var(--surface2)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive)
+                      (e.currentTarget as HTMLElement).style.background =
+                        "transparent";
+                  }}
                   onFocus={(e) => {
                     // D-pad/remote focus doesn't always trigger native scroll
                     // on TV browsers — force the focused stream into view.
@@ -1454,19 +1795,80 @@ function StreamSidebar({
                     });
                   }}
                 >
-                  <div className="stream-num-badge" style={{ width: 28, height: 28, borderRadius: 6, background: isActive ? "var(--accent)" : "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 700, color: isActive ? "#fff" : "var(--text3)", flexShrink: 0 }}>
+                  <div
+                    className="stream-num-badge"
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      background: isActive
+                        ? "var(--accent)"
+                        : "var(--surface2)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "0.72rem",
+                      fontWeight: 700,
+                      color: isActive ? "#fff" : "var(--text3)",
+                      flexShrink: 0,
+                    }}
+                  >
                     {i + 1}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="stream-btn-label" style={{ fontSize: "0.82rem", fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
-                      {groupEntries.length === 1 ? sourceName : `Stream ${s.streamNo}`}
-                      {s.hd && <span style={{ fontSize: "0.58rem", background: "var(--gold)", color: "#000", borderRadius: 3, padding: "1px 4px", fontWeight: 700 }}>HD</span>}
+                    <div
+                      className="stream-btn-label"
+                      style={{
+                        fontSize: "0.82rem",
+                        fontWeight: 500,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                      }}
+                    >
+                      {groupEntries.length === 1
+                        ? sourceName
+                        : `Stream ${s.streamNo}`}
+                      {s.hd && (
+                        <span
+                          style={{
+                            fontSize: "0.58rem",
+                            background: "var(--gold)",
+                            color: "#000",
+                            borderRadius: 3,
+                            padding: "1px 4px",
+                            fontWeight: 700,
+                          }}
+                        >
+                          HD
+                        </span>
+                      )}
                     </div>
-                    <div className="stream-btn-sub" style={{ fontSize: "0.7rem", color: "var(--text3)", marginTop: 1 }}>
-                      {s.language && s.language !== "unknown" ? s.language : "English"}
+                    <div
+                      className="stream-btn-sub"
+                      style={{
+                        fontSize: "0.7rem",
+                        color: "var(--text3)",
+                        marginTop: 1,
+                      }}
+                    >
+                      {s.language && s.language !== "unknown"
+                        ? s.language
+                        : "English"}
                     </div>
                   </div>
-                  {isActive && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, animation: "pulse 1.2s infinite" }} />}
+                  {isActive && (
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "var(--accent)",
+                        flexShrink: 0,
+                        animation: "pulse 1.2s infinite",
+                      }}
+                    />
+                  )}
                 </button>
               );
             })}

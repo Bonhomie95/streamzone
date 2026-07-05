@@ -349,27 +349,12 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
     return res.status(400).json({ error: "Invalid URL" });
   }
 
-  // Referer of the site that legitimately embeds this stream (e.g.
-  // https://streamed.pk/ or https://daddylive.eu/). Many stream hosts
-  // 404/block requests whose Referer isn't their known embedding parent —
-  // falls back to the target's own origin if the caller didn't supply one.
-  let refererUrl = `${target.protocol}//${target.hostname}/`;
-  const rawRef = req.query.ref;
-  if (rawRef && typeof rawRef === "string") {
-    try {
-      const parsedRef = new URL(rawRef);
-      if (parsedRef.protocol === "https:" || parsedRef.protocol === "http:") {
-        refererUrl = parsedRef.toString();
-      }
-    } catch { /* keep default */ }
-  }
-
   try {
     const upstream = await fetch(target.toString(), {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Referer: refererUrl,
+        Referer: `${target.protocol}//${target.hostname}/`,
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
@@ -378,17 +363,51 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
 
     let body = await upstream.text();
 
+    // Quick diagnostic: a genuinely blank/broken player is very often either
+    // (a) an anti-bot/JS challenge page instead of the real embed (short body,
+    // no <video>/<iframe>/player <script> markers), or (b) an outright
+    // non-2xx upstream response. Logging this makes "it's blank" reports
+    // diagnosable from the server terminal instead of guessing client-side.
+    const looksLikePlayer = /<video|<iframe|jwplayer|clappr|hls\.js|videojs/i.test(body);
+    console.log(
+      `[embed-proxy] ${target.hostname} -> ${upstream.status}, ${body.length} bytes` +
+        (looksLikePlayer ? "" : " (no player markers found — possible challenge/blocked page)"),
+    );
+
+    // The page may ship its own <meta http-equiv="Content-Security-Policy">.
+    // Our permissive CSP response header does NOT override that — browsers
+    // enforce the most restrictive applicable policy, so a restrictive
+    // connect-src/media-src baked into the page itself would silently block
+    // the exact stream manifest/segment requests we need to succeed,
+    // independent of anything referer-related. Strip it.
+    body = body.replace(
+      /<meta[^>]+http-equiv=["']?content-security-policy["']?[^>]*>/gi,
+      "",
+    );
+
     // The page's own relative URLs (JS bundles, CSS, its player's XHR/fetch
     // calls) must still resolve against the ORIGINAL domain, not ours —
     // otherwise every one of those requests 404s against our server and the
     // page's script never runs, leaving a blank iframe with no error.
     // Inject a <base> tag so relative paths keep working while the
     // top-level document itself is same-origin (dodging the framing block).
+    //
+    // We also force `no-referrer` for the document. The <base> tag fixes
+    // where relative URLs point, but it does NOT change what the browser
+    // sends as the Referer header — that's still our real origin
+    // (this server's origin), because that's genuinely where this document
+    // is being served from. If the embed's own player script then fetches
+    // its stream manifest/API and that endpoint is referer-gated to known
+    // domains, our real referer fails the check and the request is silently
+    // rejected. `no-referrer` sends no Referer at all; many of these referer
+    // checks only reject on a *mismatched* referer and let an absent one
+    // through.
     const baseHref = `${target.protocol}//${target.host}/`;
+    const injectedHead = `<base href="${baseHref}"><meta name="referrer" content="no-referrer">`;
     if (/<head[^>]*>/i.test(body)) {
-      body = body.replace(/<head([^>]*)>/i, `<head$1><base href="${baseHref}">`);
+      body = body.replace(/<head([^>]*)>/i, `<head$1>${injectedHead}`);
     } else {
-      body = `<base href="${baseHref}">` + body;
+      body = injectedHead + body;
     }
 
     // Strip headers that block TV browser iframes
@@ -398,8 +417,17 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
       "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
     );
     res.set("Content-Type", "text/html; charset=utf-8");
-    res.set("Cache-Control", "public, max-age=300");
-    return res.status(upstream.status).send(body);
+    res.set("Referrer-Policy", "no-referrer");
+    // Never cache embed pages. These sources are frequently gated by
+    // short-lived tokens, rotate mirrors, or serve a transient bot-challenge
+    // page — caching (or even Express's automatic ETag, which triggers
+    // browser 304s that replay the cached body) means a single bad fetch
+    // gets served back on every retry/source-switch instead of ever being
+    // re-fetched. res.end() (not res.send()) is used deliberately to skip
+    // Express's automatic ETag generation.
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
+    return res.status(upstream.status).end(body);
   } catch (err) {
     console.error("[embed-proxy] error:", err.message);
     return res
