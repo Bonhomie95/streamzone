@@ -10,8 +10,11 @@ import type {
 // ─── Sports API (streamed.pk) ─────────────────────────────────────
 const SPORTS_BASE = "https://streamed.pk/api";
 
-// ─── DaddyLive API ────────────────────────────────────────────────
-const DADDY_BASE = "https://daddylive.eu";
+// ─── DaddyLive events ───────────────────────────────────────────────
+// Fetched via our own /api/daddy-events server route (see server.js) rather
+// than https://daddylive.eu/api/events directly — daddylive.eu doesn't send
+// CORS headers permitting cross-origin browser fetches, so a direct fetch
+// failed silently on every load.
 const API_TIMEOUT = 10_000;
 
 // ─── TTL cache (60 s) ─────────────────────────────────────────────
@@ -93,7 +96,7 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
           }>
         >;
       }>
-    >(`${DADDY_BASE}/api/events`);
+    >(`/api/daddy-events`);
 
     const matchMap = new Map<string, EnrichedMatch & { _daddyUrls: string[] }>();
 

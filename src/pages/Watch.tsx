@@ -14,7 +14,7 @@ import {
   Film,
   Share2,
   Check,
-  Tv,
+  Play,
 } from "lucide-react";
 import {
   fetchStreams,
@@ -87,7 +87,13 @@ export default function Watch() {
   const [isTV, setIsTV] = useState(() => {
     try {
       const stored = localStorage.getItem(DIRECT_MODE_KEY);
-      if (stored === "1") return true;
+      // Previously, a single slow/flaky iframe load on any browser could
+      // permanently stick that browser into direct mode. Self-heal it: a
+      // stored "1" is only trustworthy if this is actually a TV user agent
+      // or the user explicitly chose it manually — since we can't tell
+      // those apart in storage, only honor "1" when the UA still looks like
+      // a TV; otherwise treat it as a stale false positive.
+      if (stored === "1") return detectIsTV();
       if (stored === "0") return false;
     } catch {
       /* noop */
@@ -330,7 +336,15 @@ export default function Watch() {
     iframeLoadedRef.current = false;
     if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
     loadWatchdogRef.current = setTimeout(() => {
-      if (!iframeLoadedRef.current) setDirectMode(true);
+      // Only auto-escalate to full-page direct mode for genuine TV user
+      // agents. A missed onload on a normal desktop/mobile browser is far
+      // more often a slow/flaky mirror than an actual CSP frame-ancestors
+      // block, and setDirectMode() persists to localStorage — wrongly
+      // sticking a regular browser into full-page mode for every future
+      // match would be worse than the blank iframe it's meant to fix. The
+      // "Nothing playing? Try another source" hint already covers this case
+      // without taking away the iframe's own player controls.
+      if (!iframeLoadedRef.current && detectIsTV()) setDirectMode(true);
     }, LOAD_WATCHDOG_MS);
     return () => {
       if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
@@ -982,37 +996,11 @@ export default function Watch() {
                     position: "absolute",
                     inset: 0,
                     display: "flex",
-                    flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 18,
                     background: "var(--bg2)",
-                    textAlign: "center",
-                    padding: "0 24px",
                   }}
                 >
-                  <Tv size={48} strokeWidth={1.2} color="var(--accent)" />
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "1rem",
-                        fontWeight: 700,
-                        marginBottom: 6,
-                      }}
-                    >
-                      Ready to watch on TV
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "0.8rem",
-                        color: "var(--text3)",
-                        maxWidth: 320,
-                      }}
-                    >
-                      {activeStream.source} · Stream #{activeStream.streamNo}
-                      {activeStream.hd ? " · HD" : ""}
-                    </div>
-                  </div>
                   <button
                     autoFocus
                     onClick={() => {
@@ -1021,38 +1009,17 @@ export default function Watch() {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 8,
+                      justifyContent: "center",
+                      width: 72,
+                      height: 72,
+                      borderRadius: "50%",
                       background: "var(--accent)",
                       color: "#fff",
                       border: "none",
-                      borderRadius: 8,
-                      padding: "12px 28px",
-                      fontSize: "1rem",
-                      fontWeight: 700,
                       cursor: "pointer",
                     }}
                   >
-                    Tap to Watch
-                  </button>
-                  {streams.length > 1 && (
-                    <div style={{ fontSize: "0.72rem", color: "var(--text3)" }}>
-                      Pick a different source from the list below if this one
-                      doesn't load
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setDirectMode(false)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--text3)",
-                      fontSize: "0.7rem",
-                      textDecoration: "underline",
-                      cursor: "pointer",
-                      marginTop: 4,
-                    }}
-                  >
-                    Try the embedded player instead
+                    <Play size={28} fill="#fff" color="#fff" style={{ marginLeft: 3 }} />
                   </button>
                 </div>
               ) : activeStream ? (
