@@ -22,31 +22,77 @@ const CATEGORIES = [
   { id: 'top_rated_tv',    label: 'Top Rated TV',  icon: <Award size={14}/>,      fetch: (page: number) => fetchTopRated('tv', page) },
 ];
 
+const STATE_STORAGE_KEY = 'sz_movieHome_state';
+
+function loadSavedMovieHomeState() {
+  try {
+    const raw = sessionStorage.getItem(STATE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function MovieHome() {
   const navigate = useNavigate();
-  const [activeCategory, setActiveCategory] = useState('trending');
-  const [mediaType, setMediaType] = useState<MediaType>('movie');
+  const savedStateRef = useRef(loadSavedMovieHomeState());
+  const restoredScrollRef = useRef(false);
+  const [activeCategory, setActiveCategory] = useState(savedStateRef.current?.activeCategory ?? 'trending');
+  const [mediaType, setMediaType] = useState<MediaType>(savedStateRef.current?.mediaType ?? 'movie');
   const [movies, setMovies] = useState<Movie[]>([]);
   const [featured, setFeatured] = useState<Movie[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [movieGenreIds, setMovieGenreIds] = useState<Set<number>>(new Set());
   const [tvGenreIds, setTvGenreIds] = useState<Set<number>>(new Set());
-  const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGenre, setSelectedGenre] = useState<number | null>(savedStateRef.current?.selectedGenre ?? null);
+  const [searchQuery, setSearchQuery] = useState(savedStateRef.current?.searchQuery ?? '');
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
   const [searching, setSearching] = useState(false);
-  const [filterYear, setFilterYear] = useState<string>('');
-  const [filterRating, setFilterRating] = useState<string>('');
-  const [filterType, setFilterType] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<string>('popularity');
+  const [filterYear, setFilterYear] = useState<string>(savedStateRef.current?.filterYear ?? '');
+  const [filterRating, setFilterRating] = useState<string>(savedStateRef.current?.filterRating ?? '');
+  const [filterType, setFilterType] = useState<string>(savedStateRef.current?.filterType ?? 'all');
+  const [sortBy, setSortBy] = useState<string>(savedStateRef.current?.sortBy ?? 'popularity');
   const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [heroIdx, setHeroIdx] = useState(0);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(savedStateRef.current?.page ?? 1);
   const [totalPages, setTotalPages] = useState(1);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  useEffect(() => { loadCategory('trending'); loadFeatured(); loadGenres(); }, []);
+  // Restore whichever view (category / genre / search) the user was on,
+  // at the same page, instead of always resetting to Trending page 1.
+  useEffect(() => {
+    const saved = savedStateRef.current;
+    if (saved?.searchQuery) {
+      setSearching(true);
+      searchMovies(saved.searchQuery, saved.page || 1).then(results => {
+        setSearchResults(results);
+        setTotalPages(results.totalPages ?? 1);
+        setSearching(false);
+        setLoading(false);
+      });
+    } else if (saved?.selectedGenre) {
+      loadGenreMovies(saved.selectedGenre, saved.page || 1);
+    } else {
+      loadCategory(saved?.activeCategory || 'trending', saved?.page || 1);
+    }
+    loadFeatured();
+    loadGenres();
+  }, []);
+
+  // Once the restored content has finished loading, scroll back to where
+  // the user left off (e.g. mid-grid on page 3) rather than the top.
+  useEffect(() => {
+    if (!loading && !searching && !restoredScrollRef.current) {
+      restoredScrollRef.current = true;
+      const savedScrollY = savedStateRef.current?.scrollY;
+      if (savedScrollY) {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: savedScrollY, behavior: 'auto' });
+        });
+      }
+    }
+  }, [loading, searching]);
 
   useEffect(() => {
     const t = setInterval(() => setHeroIdx(i => (i + 1) % Math.min(featured.length || 1, 5)), 6000);
@@ -134,6 +180,20 @@ export default function MovieHome() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function openMovie(m: Movie) {
+    try {
+      sessionStorage.setItem(STATE_STORAGE_KEY, JSON.stringify({
+        activeCategory, mediaType, selectedGenre, searchQuery,
+        filterYear, filterRating, filterType, sortBy, page,
+        scrollY: window.scrollY,
+      }));
+    } catch {
+      // sessionStorage unavailable (e.g. private browsing) — safe to ignore,
+      // back button will just fall back to the default view in that case.
+    }
+    navigate(`/movies/watch/${m.mediaType}/${m.tmdbId}`);
+  }
+
   const hero = featured[heroIdx];
   const displayMovies = (() => {
     let list = searchQuery ? searchResults : movies;
@@ -179,7 +239,7 @@ export default function MovieHome() {
             </div>
             <h1 style={{ fontFamily: 'Bebas Neue', fontSize: 'clamp(1.6rem,5vw,3rem)', letterSpacing: '0.04em', lineHeight: 1, color: 'var(--text)' }}>{hero.title}</h1>
             <p style={{ fontSize: '0.82rem', color: 'var(--text2)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{hero.overview}</p>
-            <button onClick={() => navigate(`/movies/watch/${hero.mediaType}/${hero.tmdbId}`)} style={{
+            <button onClick={() => openMovie(hero)} style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
               background: 'var(--accent)', color: '#fff', border: 'none',
               borderRadius: 9, padding: '10px 22px', fontSize: '0.88rem', fontWeight: 700,
@@ -356,7 +416,7 @@ export default function MovieHome() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14 }}>
               {displayMovies.map(m => (
-                <MovieCard key={`${m.mediaType}-${m.id}`} movie={m} onClick={() => navigate(`/movies/watch/${m.mediaType}/${m.tmdbId}`)} />
+                <MovieCard key={`${m.mediaType}-${m.id}`} movie={m} onClick={() => openMovie(m)} />
               ))}
             </div>
           )}

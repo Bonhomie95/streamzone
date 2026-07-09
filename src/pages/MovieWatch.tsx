@@ -307,7 +307,7 @@ export default function MovieWatch() {
           <WifiOff size={40} strokeWidth={1.2} />
           <span>Content not found</span>
           <button
-            onClick={() => navigate("/movies")}
+            onClick={() => navigate(-1)}
             style={{
               marginTop: 8,
               background: "var(--accent)",
@@ -1649,7 +1649,11 @@ function WatchTopBar() {
         }}
       >
         <button
-          onClick={() => navigate("/movies")}
+          onClick={() =>
+            window.history.state && window.history.state.idx > 0
+              ? navigate(-1)
+              : navigate("/movies")
+          }
           style={{
             display: "flex",
             alignItems: "center",
