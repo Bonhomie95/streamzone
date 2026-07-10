@@ -4,7 +4,7 @@
     { "source": "/api", "destination": "/api/proxy" },
     { "source": "/embed-proxy", "destination": "/api/embed-proxy" },
     { "source": "/views", "destination": "/api/views" },
-    { "source": "/views/:id", "destination": "/api/views/:id" },
+    { "source": "/views/:id*", "destination": "/api/views/:id*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "functions": {
@@ -13,6 +13,6 @@
     "api/embed-proxy.js": { "maxDuration": 15 },
     "api/daddy-events.js": { "maxDuration": 15 },
     "api/views/index.js": { "maxDuration": 10 },
-    "api/views/[id].js": { "maxDuration": 10 }
+    "api/views/[...id].js": { "maxDuration": 10 }
   }
 }

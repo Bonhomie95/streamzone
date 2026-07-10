@@ -14,7 +14,7 @@ export function useViewCount(id: string | number, autoIncrement = true) {
 
     async function increment() {
       try {
-        const res = await fetch(`${API}/views/${strId}`, { method: "POST" });
+        const res = await fetch(`${API}/views/${encodeURIComponent(strId)}`, { method: "POST" });
         const data = await res.json();
         setCount(data.count);
       } catch {
@@ -24,7 +24,7 @@ export function useViewCount(id: string | number, autoIncrement = true) {
 
     async function poll() {
       try {
-        const res = await fetch(`${API}/views/${strId}`);
+        const res = await fetch(`${API}/views/${encodeURIComponent(strId)}`);
         const data = await res.json();
         setCount(data.count);
       } catch {
@@ -62,7 +62,7 @@ export async function fetchBulkViewCounts(
   if (ids.length === 0) return {};
   try {
     const res = await fetch(
-      `${import.meta.env.VITE_API_BASE ?? ""}/views?ids=${ids.join(",")}`,
+      `${import.meta.env.VITE_API_BASE ?? ""}/views?ids=${ids.map((id) => encodeURIComponent(String(id))).join(",")}`,
     );
     return await res.json();
   } catch {

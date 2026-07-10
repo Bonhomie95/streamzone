@@ -119,7 +119,7 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
 
           const channelId = ev.channels[0]?.channel_id ?? "";
           const rawId = channelId ? `${channelId}_${matchTitle}` : ev.event;
-          const id = `daddy_${encodeURIComponent(rawId)}`;
+          const id = `daddy_${rawId}`;
 
           const entry = {
             id,

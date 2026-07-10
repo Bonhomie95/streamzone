@@ -60,9 +60,11 @@ function formatDate(ms: number) {
 
 export default function Watch() {
   const { matchId: rawMatchId } = useParams<{ matchId: string }>();
-  // React Router decodes URL params once automatically — no manual decode needed.
-  // A second decodeURIComponent would break IDs that contain encoded chars (e.g. daddy_ IDs).
-  const matchId = rawMatchId;
+  // react-router does NOT auto-decode dynamic segments (verified against
+  // matchPath directly) — the id was encoded exactly once when the link
+  // was built (see MatchCard/Home `encodeURIComponent(match.id)`), so it
+  // must be decoded exactly once here to get back the raw match.id.
+  const matchId = rawMatchId ? decodeURIComponent(rawMatchId) : rawMatchId;
   const navigate = useNavigate();
 
   const [match, setMatch] = useState<EnrichedMatch | null>(null);
