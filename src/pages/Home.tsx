@@ -10,10 +10,25 @@ import AdPopup from '../components/AdPopup';
 import AddToHomeScreen from '../components/AddToHomeScreen';
 import { fetchSports, fetchAllMatches } from '../api';
 import { useFavouriteTeams, getPreferredSport, recordSportClick } from '../hooks/useFavourites';
-import type { Sport, EnrichedMatch } from '../types';
+import type { Sport, EnrichedMatch, MatchStatus } from '../types';
 import type { StatusFilter } from '../components/StatusTabs';
 
 type SidebarFilter = string | '__favourites__';
+const LIVE_WINDOW_BEFORE_START_MS = 5 * 60 * 1000;
+const FINISHED_AFTER_START_MS = 2.5 * 60 * 60 * 1000;
+
+function getTimedStatus(match: EnrichedMatch): MatchStatus {
+  const now = Date.now();
+  if (match.status === 'finished') return 'finished';
+  if (match.status === 'live') {
+    return now - match.date < FINISHED_AFTER_START_MS ? 'live' : 'finished';
+  }
+
+  const startsIn = match.date - now;
+  if (startsIn > LIVE_WINDOW_BEFORE_START_MS) return 'upcoming';
+  if (now - match.date < FINISHED_AFTER_START_MS) return 'live';
+  return 'finished';
+}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -30,12 +45,66 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const fetchGenRef = useRef(0);
+  const shouldOpenLiveRef = useRef(false);
   const { isFav: isTeamFav } = useFavouriteTeams();
 
   useEffect(() => {
     fetchSports().then(setApiSports).catch(() => {});
     loadAllMatches();
   }, []);
+
+  useEffect(() => {
+    const tick = () => {
+      const query = searchQuery.trim().toLowerCase();
+      const isInCurrentView = (match: EnrichedMatch) => {
+        if (selectedSport === '__favourites__') {
+          const isFavourite =
+            (match.teams?.home?.name && isTeamFav(match.teams.home.name, match.category)) ||
+            (match.teams?.away?.name && isTeamFav(match.teams.away.name, match.category));
+          if (!isFavourite) return false;
+        } else if (selectedSport !== 'all' && match.category !== selectedSport) {
+          return false;
+        }
+
+        if (!query) return true;
+        return (
+          match.title.toLowerCase().includes(query) ||
+          !!match.teams?.home?.name.toLowerCase().includes(query) ||
+          !!match.teams?.away?.name.toLowerCase().includes(query)
+        );
+      };
+
+      setAllMatches(prev => {
+        let promotedInCurrentView = false;
+        const next = prev.map(match => {
+          const status = getTimedStatus(match);
+          if (status === match.status) return match;
+          if (
+            statusFilter === 'upcoming' &&
+            match.status === 'upcoming' &&
+            status === 'live' &&
+            isInCurrentView(match)
+          ) {
+            promotedInCurrentView = true;
+          }
+          return { ...match, status };
+        });
+        if (promotedInCurrentView) shouldOpenLiveRef.current = true;
+        const changed = next.some((match, index) => match !== prev[index]);
+        if (changed) cacheMatchesForLater(next);
+        return changed ? next : prev;
+      });
+    };
+
+    const id = window.setInterval(tick, 15_000);
+    return () => window.clearInterval(id);
+  }, [isTeamFav, searchQuery, selectedSport, statusFilter]);
+
+  useEffect(() => {
+    if (!shouldOpenLiveRef.current) return;
+    shouldOpenLiveRef.current = false;
+    setStatusFilter('live');
+  }, [allMatches]);
 
   async function loadAllMatches() {
     const gen = ++fetchGenRef.current;
@@ -79,7 +148,7 @@ export default function Home() {
     const key = `match_${match.id}`;
     const value = JSON.stringify(match);
     sessionStorage.setItem(key, value);
-    try { localStorage.setItem(key, value); } catch {}
+    try { localStorage.setItem(key, value); } catch { /* storage unavailable, session cache is enough */ }
     navigate(`/watch/${encodeURIComponent(match.id)}`);
   }
 
