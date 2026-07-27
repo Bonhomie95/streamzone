@@ -122,11 +122,22 @@ export default function MovieWatch() {
       ]);
       setMovie(details);
       setSimilar(sim);
-      const srcs = getEmbedSources(id, mediaType);
+      const initialSeason =
+        mediaType === "tv"
+          ? (details.seasons?.find((s) => s.episodes > 0)?.season ?? 1)
+          : undefined;
+      const initialEpisode = mediaType === "tv" ? 1 : undefined;
+
+      if (mediaType === "tv") {
+        setSelectedSeason(initialSeason ?? 1);
+        setSelectedEpisode(initialEpisode ?? 1);
+      }
+
+      const srcs = getEmbedSources(id, mediaType, initialSeason, initialEpisode);
       setStreams(srcs);
       setLoading(false);
       // Check for saved progress before probing
-      const saved = loadProgress(mediaType, id);
+      const saved = loadProgress(mediaType, id, initialSeason, initialEpisode);
       if (saved && saved.elapsed > 30) {
         setResumeElapsed(saved.elapsed);
         setShowResumeBanner(true);
@@ -230,6 +241,10 @@ export default function MovieWatch() {
       setActiveStream(srcs[0] ?? null);
     }
   }, []);
+
+  async function switchToSeason(season: number) {
+    await switchToEpisode(season, 1);
+  }
 
   async function switchToEpisode(season: number, episode: number) {
     setSelectedSeason(season);
@@ -855,7 +870,7 @@ export default function MovieWatch() {
                     {movie.seasons.map((s) => (
                       <button
                         key={s.season}
-                        onClick={() => setSelectedSeason(s.season)}
+                        onClick={() => switchToSeason(s.season)}
                         style={{
                           flexShrink: 0,
                           padding: "7px 16px",
@@ -927,9 +942,7 @@ export default function MovieWatch() {
                       },
                       (_, i) => i + 1,
                     ).map((ep) => {
-                      const isActive =
-                        selectedSeason === selectedSeason &&
-                        selectedEpisode === ep;
+                      const isActive = selectedEpisode === ep;
                       return (
                         <button
                           key={ep}
