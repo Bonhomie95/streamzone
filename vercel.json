@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/api/status", "destination": "/api/status" },
+    { "source": "/api/movie-probe", "destination": "/api/movie-probe" },
     { "source": "/api", "destination": "/api/proxy" },
     { "source": "/embed-proxy", "destination": "/api/embed-proxy" },
     { "source": "/views", "destination": "/api/views" },
@@ -10,6 +11,7 @@
   "functions": {
     "api/proxy.js": { "maxDuration": 15 },
     "api/status.js": { "maxDuration": 10 },
+    "api/movie-probe.js": { "maxDuration": 10 },
     "api/embed-proxy.js": { "maxDuration": 15 },
     "api/daddy-events.js": { "maxDuration": 15 },
     "api/views/index.js": { "maxDuration": 10 },

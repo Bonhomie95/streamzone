@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { probeMovieEmbed } from "./api/_lib/movieProbe.js";
 
 // ─── Simple in-memory rate limiter ───────────────────────────────
 // No extra package needed — tracks requests per IP per window.
@@ -476,6 +477,20 @@ app.get("/embed-proxy", apiRateLimit(20), async (req, res) => {
     return res
       .status(502)
       .json({ error: "Upstream fetch failed", message: err.message });
+  }
+});
+
+app.get("/api/movie-probe", apiRateLimit(60), async (req, res) => {
+  const raw = req.query.url;
+  if (!raw || typeof raw !== "string") {
+    return res.status(400).json({ ok: false, error: "Missing url param" });
+  }
+
+  try {
+    const result = await probeMovieEmbed(raw);
+    return res.json(result);
+  } catch (err) {
+    return res.json({ ok: false, error: err.message });
   }
 });
 

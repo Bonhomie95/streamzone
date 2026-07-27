@@ -17,6 +17,8 @@ import {
   RefreshCw,
   Trophy,
   Film,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import {
   fetchMovieDetails,
@@ -35,10 +37,8 @@ import AdBanner from "../components/AdBanner";
 import type { Movie, MediaType, Stream } from "../types";
 
 type ProbeStatus = "idle" | "probing" | "found" | "all_failed";
+type PlayerFit = "contain" | "zoomed";
 
-// Probe a URL by fetching it with no-cors — if it resolves (even opaque) the domain is alive
-// Smart TV browsers (Tizen, webOS, Android TV) block no-cors cross-origin fetches and throw
-// a security/sandbox error that breaks the whole player. Skip probing on TVs and assume alive.
 function isTVBrowser(): boolean {
   const ua = navigator.userAgent.toLowerCase();
   return /tizen|webos|smart-tv|netcast|nettv|hbbtv|androidtv|crkey|googletv|viera|bravia|roku/.test(
@@ -47,20 +47,25 @@ function isTVBrowser(): boolean {
 }
 
 async function probeUrl(url: string): Promise<boolean> {
-  if (isTVBrowser()) return true; // TV browsers can't do no-cors probes safely
+  if (isTVBrowser()) return true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-    await fetch(url, {
-      method: "GET",
-      mode: "no-cors",
+    const res = await fetch(`/api/movie-probe?url=${encodeURIComponent(url)}`, {
       signal: controller.signal,
     });
-    clearTimeout(timeout);
-    return true; // opaque response = domain alive
+    if (!res.ok) return false;
+    const data = (await res.json()) as { ok?: boolean };
+    return data.ok === true;
   } catch {
-    return false; // DNS fail / refused / timeout
+    return false;
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+function defaultPlayerFit(source?: string): PlayerFit {
+  return source?.toLowerCase().includes("videasy") ? "contain" : "zoomed";
 }
 
 export default function MovieWatch() {
@@ -95,6 +100,7 @@ export default function MovieWatch() {
   const [selectedEpisode, setSelectedEpisode] = useState(1);
   const [showEpisodes, setShowEpisodes] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playerFit, setPlayerFit] = useState<PlayerFit>("zoomed");
   const [showResumeBanner, setShowResumeBanner] = useState(false);
   const [resumeElapsed, setResumeElapsed] = useState(0);
   const [showStreamNotice, setShowStreamNotice] = useState(false);
@@ -207,6 +213,7 @@ export default function MovieWatch() {
           if (alive && !firstFound) {
             firstFound = true;
             setActiveStream(s);
+            setPlayerFit(defaultPlayerFit(s.source));
             setProbeStatus("found");
             setIsPlaying(true);
           }
@@ -261,6 +268,7 @@ export default function MovieWatch() {
 
   function switchStream(s: Stream) {
     setActiveStream(s);
+    setPlayerFit(defaultPlayerFit(s.source));
     setIframeError(false);
     setIsPlaying(true);
   }
@@ -1152,21 +1160,36 @@ export default function MovieWatch() {
                   </div>
                 </div>
               ) : activeStream ? (
-                <iframe
-                  key={activeStream.embedUrl}
-                  src={activeStream.embedUrl}
+                <div
                   style={{
                     position: "absolute",
                     inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    border: "none",
-                    display: "block",
+                    overflow: "hidden",
                   }}
-                  allowFullScreen
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-                  onError={() => setIframeError(true)}
-                />
+                >
+                  <iframe
+                    key={activeStream.embedUrl}
+                    src={activeStream.embedUrl}
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      width: playerFit === "contain" ? "125%" : "100%",
+                      height: playerFit === "contain" ? "125%" : "100%",
+                      border: "none",
+                      display: "block",
+                      transform:
+                        playerFit === "contain"
+                          ? "translate(-50%, -50%) scale(0.8)"
+                          : "translate(-50%, -50%)",
+                      transformOrigin: "center center",
+                      background: "#000",
+                    }}
+                    allowFullScreen
+                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                    onError={() => setIframeError(true)}
+                  />
+                </div>
               ) : null}
             </div>
 
@@ -1218,6 +1241,41 @@ export default function MovieWatch() {
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 10 }}
                   >
+                    <button
+                      onClick={() =>
+                        setPlayerFit((fit) =>
+                          fit === "contain" ? "zoomed" : "contain",
+                        )
+                      }
+                      title={
+                        playerFit === "contain"
+                          ? "Use normal player size"
+                          : "Zoom out player"
+                      }
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 7,
+                        border: "1px solid var(--border)",
+                        background:
+                          playerFit === "contain"
+                            ? "var(--accent-dim)"
+                            : "var(--surface2)",
+                        color:
+                          playerFit === "contain"
+                            ? "var(--accent)"
+                            : "var(--text2)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {playerFit === "contain" ? (
+                        <Maximize2 size={13} />
+                      ) : (
+                        <Minimize2 size={13} />
+                      )}
+                    </button>
                     {elapsed > 10 && (
                       <span
                         style={{ fontSize: "0.7rem", color: "var(--text3)" }}
