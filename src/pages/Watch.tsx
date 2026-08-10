@@ -1039,7 +1039,9 @@ export default function Watch() {
                       display: "block",
                     }}
                     allowFullScreen
-                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                    // Bare keywords scope each permission to the src origin, so
+                    // they are lost if the embed redirects to another origin.
+                    allow="autoplay *; fullscreen *; encrypted-media *; picture-in-picture *; clipboard-write *"
                     onLoad={() => {
                       iframeLoadedRef.current = true;
                       if (loadWatchdogRef.current)

@@ -104,34 +104,6 @@ export default function MovieWatch() {
   const [showResumeBanner, setShowResumeBanner] = useState(false);
   const [resumeElapsed, setResumeElapsed] = useState(0);
   const [showStreamNotice, setShowStreamNotice] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [isIframeFullscreen, setIsIframeFullscreen] = useState(false);
-
-  useEffect(() => {
-    function handleFullscreenChange() {
-      const fsEl =
-        document.fullscreenElement ??
-        (document as unknown as { webkitFullscreenElement?: Element })
-          .webkitFullscreenElement ??
-        null;
-      setIsIframeFullscreen(!!fsEl && fsEl === iframeRef.current);
-    }
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    document.addEventListener(
-      "webkitfullscreenchange",
-      handleFullscreenChange,
-    );
-    return () => {
-      document.removeEventListener(
-        "fullscreenchange",
-        handleFullscreenChange,
-      );
-      document.removeEventListener(
-        "webkitfullscreenchange",
-        handleFullscreenChange,
-      );
-    };
-  }, []);
 
   const { elapsed, clear: clearProgress } = useWatchProgress({
     tmdbId: id,
@@ -1196,39 +1168,28 @@ export default function MovieWatch() {
                   }}
                 >
                   <iframe
-                    ref={iframeRef}
                     key={activeStream.embedUrl}
                     src={activeStream.embedUrl}
-                    style={
-                      isIframeFullscreen
-                        ? {
-                            position: "fixed",
-                            inset: 0,
-                            width: "100%",
-                            height: "100%",
-                            border: "none",
-                            display: "block",
-                            transform: "none",
-                            background: "#000",
-                          }
-                        : {
-                            position: "absolute",
-                            top: "50%",
-                            left: "50%",
-                            width: playerFit === "contain" ? "125%" : "100%",
-                            height: playerFit === "contain" ? "125%" : "100%",
-                            border: "none",
-                            display: "block",
-                            transform:
-                              playerFit === "contain"
-                                ? "translate(-50%, -50%) scale(0.8)"
-                                : "translate(-50%, -50%)",
-                            transformOrigin: "center center",
-                            background: "#000",
-                          }
-                    }
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      width: playerFit === "contain" ? "125%" : "100%",
+                      height: playerFit === "contain" ? "125%" : "100%",
+                      border: "none",
+                      display: "block",
+                      transform:
+                        playerFit === "contain"
+                          ? "translate(-50%, -50%) scale(0.8)"
+                          : "translate(-50%, -50%)",
+                      transformOrigin: "center center",
+                      background: "#000",
+                    }}
                     allowFullScreen
-                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+                    // Bare `fullscreen` scopes the permission to the src origin
+                    // only. Videasy redirects player.videasy.net -> .to, which
+                    // would drop the grant, so allow every origin explicitly.
+                    allow="autoplay *; fullscreen *; encrypted-media *; picture-in-picture *; clipboard-write *"
                     onError={() => setIframeError(true)}
                   />
                 </div>

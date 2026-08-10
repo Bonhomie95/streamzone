@@ -290,7 +290,9 @@ export default function StreamModal({ match, onClose }: StreamModalProps) {
                         display: "block",
                       }}
                       allowFullScreen
-                      allow="autoplay; fullscreen"
+                      // Bare keywords scope each permission to the src origin,
+                      // so they are lost if the embed redirects elsewhere.
+                      allow="autoplay *; fullscreen *"
                       onError={() => setIframeBlocked(true)}
                     />
                     <div
