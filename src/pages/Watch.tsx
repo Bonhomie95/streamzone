@@ -58,6 +58,27 @@ function formatDate(ms: number) {
   });
 }
 
+// Probe a stream embed URL via the backend to check if it's actually alive.
+// Mirrors the movie-probe used on the movie watch page. TV browsers skip the
+// probe (their stricter iframe policies make the reachability check unreliable).
+async function probeStreamUrl(url: string): Promise<boolean> {
+  if (detectIsTV()) return true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
+  try {
+    const res = await fetch(`/api/movie-probe?url=${encodeURIComponent(url)}`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { ok?: boolean };
+    return data.ok === true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default function Watch() {
   const { matchId: rawMatchId } = useParams<{ matchId: string }>();
   // react-router does NOT auto-decode dynamic segments (verified against
@@ -70,6 +91,11 @@ export default function Watch() {
   const [match, setMatch] = useState<EnrichedMatch | null>(null);
   const [streams, setStreams] = useState<Stream[]>([]);
   const [activeStream, setActiveStream] = useState<Stream | null>(null);
+  // Per-stream health status from the backend probe. Streams that come back
+  // "dead" are hidden from the source list; "ok" ones get a green flag.
+  const [sourceStatuses, setSourceStatuses] = useState<
+    Record<string, "ok" | "dead" | "unknown">
+  >({});
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [iframeError, setIframeError] = useState(false);
@@ -234,10 +260,32 @@ export default function Watch() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [streams, activeStream]);
 
+  // Probe every stream in the background and record ok/dead so the source
+  // list can hide the broken ones. Runs in parallel batches to stay fast.
+  const probeStreams = useCallback((srcs: Stream[]) => {
+    if (srcs.length === 0) return;
+    const BATCH = 3;
+    (async () => {
+      for (let i = 0; i < srcs.length; i += BATCH) {
+        const batch = srcs.slice(i, i + BATCH);
+        await Promise.all(
+          batch.map(async (s) => {
+            const alive = await probeStreamUrl(s.embedUrl);
+            setSourceStatuses((prev) => ({
+              ...prev,
+              [s.id]: alive ? "ok" : "dead",
+            }));
+          }),
+        );
+      }
+    })();
+  }, []);
+
   async function loadStreams(m: EnrichedMatch) {
     setLoadingStreams(true);
     setStreams([]);
     setActiveStream(null);
+    setSourceStatuses({});
     setIframeError(false);
     clearRetryTimers();
 
@@ -262,6 +310,7 @@ export default function Watch() {
       setStreams(s);
       if (s.length > 0) setActiveStream(s[0]);
       setLoadingStreams(false);
+      probeStreams(s);
       return;
     }
 
@@ -272,6 +321,7 @@ export default function Watch() {
     setStreams(all);
     if (all.length > 0) setActiveStream(all[0]);
     setLoadingStreams(false);
+    probeStreams(all);
   }
 
   function switchStream(s: Stream) {
@@ -547,6 +597,14 @@ export default function Watch() {
       </div>
     );
   }
+
+  // Only surface streams that aren't confirmed dead. If every stream probed
+  // dead (or the probe couldn't run), fall back to showing them all rather
+  // than leaving the viewer with an empty source list.
+  const aliveStreams = streams.filter(
+    (s) => (sourceStatuses[s.id] ?? "unknown") !== "dead",
+  );
+  const visibleStreams = aliveStreams.length > 0 ? aliveStreams : streams;
 
   return (
     <div
@@ -1176,8 +1234,8 @@ export default function Watch() {
               >
                 <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <Tv2 size={14} color="var(--accent)" />
-                  {streams.length} stream{streams.length !== 1 ? "s" : ""}{" "}
-                  available
+                  {visibleStreams.length} stream
+                  {visibleStreams.length !== 1 ? "s" : ""} available
                 </span>
                 {showStreamList ? (
                   <ChevronUp size={14} />
@@ -1187,7 +1245,8 @@ export default function Watch() {
               </button>
               {showStreamList && (
                 <StreamSidebar
-                  streams={streams}
+                  streams={visibleStreams}
+                  statuses={sourceStatuses}
                   activeStream={activeStream}
                   onSwitch={switchStream}
                 />
@@ -1201,7 +1260,8 @@ export default function Watch() {
             style={{ width: "clamp(240px, 20vw, 400px)", flexShrink: 0 }}
           >
             <StreamSidebar
-              streams={streams}
+              streams={visibleStreams}
+              statuses={sourceStatuses}
               activeStream={activeStream}
               onSwitch={switchStream}
               loading={loadingStreams}
@@ -1590,11 +1650,13 @@ function StreamSidebar({
   activeStream,
   onSwitch,
   loading,
+  statuses,
 }: {
   streams: Stream[];
   activeStream: Stream | null;
   onSwitch: (s: Stream) => void;
   loading?: boolean;
+  statuses?: Record<string, "ok" | "dead" | "unknown">;
 }) {
   if (loading) {
     return (
@@ -1828,6 +1890,18 @@ function StreamSidebar({
                         : "English"}
                     </div>
                   </div>
+                  {!isActive && statuses?.[s.id] === "ok" && (
+                    <div
+                      title="Working"
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "var(--green)",
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
                   {isActive && (
                     <div
                       style={{

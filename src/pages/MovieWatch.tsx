@@ -1344,6 +1344,7 @@ export default function MovieWatch() {
               style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
             >
               {[...streams]
+                .filter((s) => (sourceStatuses[s.id] ?? "unknown") !== "dead")
                 .sort((a, b) => {
                   const rank = (id: string) => {
                     const s = sourceStatuses[id];
@@ -1454,6 +1455,7 @@ export default function MovieWatch() {
                 Stream Sources
               </div>
               {[...streams]
+                .filter((s) => (sourceStatuses[s.id] ?? "unknown") !== "dead")
                 .sort((a, b) => {
                   const rank = (id: string) => {
                     const s = sourceStatuses[id];
