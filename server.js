@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { probeMovieEmbed } from "./api/_lib/movieProbe.js";
+import { handleFootballLive } from "./api/_lib/footballLive.js";
+import { handleStreamProxy } from "./api/_lib/streamProxy.js";
 
 // ─── Simple in-memory rate limiter ───────────────────────────────
 // No extra package needed — tracks requests per IP per window.
@@ -49,16 +51,21 @@ const KEYS = [process.env.SPORTSRC_KEY_1, process.env.SPORTSRC_KEY_2].filter(
   Boolean,
 );
 
+// SportSRC keys are optional while the 1xAPI football source is being
+// tested — only the legacy /api route needs them.
 if (KEYS.length === 0) {
-  console.error(
-    "[proxy] ERROR: No API keys found. Check your .env file has SPORTSRC_KEY_1 and SPORTSRC_KEY_2",
+  console.warn(
+    "[proxy] No SportSRC keys (SPORTSRC_KEY_1 / SPORTSRC_KEY_2) — legacy /api route disabled",
   );
-  process.exit(1);
 }
 
 console.log(
   `[proxy] Loaded ${KEYS.length} key(s): ${KEYS.map((k) => k.slice(0, 8) + "…").join(", ")}`,
 );
+
+if (!process.env.RAPIDAPI_KEY) {
+  console.warn("[football-live] RAPIDAPI_KEY not set — /api/football-live will return 500");
+}
 
 const SPORTSRC_BASE = "https://api.sportsrc.org/v2/";
 const exhaustedUntil = {};
@@ -367,6 +374,19 @@ app.get("/api/daddy-events", apiRateLimit(30), async (req, res) => {
     return res.status(502).json({ error: "UPSTREAM_ERROR", message: err.message });
   }
 });
+
+// ─── Football Live Streaming API (RapidAPI / 1xAPI) ──────────────
+// Keeps RAPIDAPI_KEY server-side and caches responses (free plan = 50
+// requests/day). Logic shared with Vercel — see api/_lib/footballLive.js.
+app.get("/api/football-live", apiRateLimit(30), handleFootballLive);
+
+// ─── Stream relay (HLS / DASH / FLV) ─────────────────────────────
+// Some 1xAPI servers need a Referer the browser can't send, or have no CORS
+// headers. The player falls back to fetching them through here; HLS
+// playlists are rewritten so segments go through too. See
+// api/_lib/streamProxy.js. A viewer pulls a segment every few seconds,
+// hence the high per-minute limit.
+app.get("/api/stream-proxy", apiRateLimit(900), handleStreamProxy);
 
 // ─── Embed Proxy ──────────────────────────────────────────────────
 // Fetches third-party embed pages server-side and strips X-Frame-Options /

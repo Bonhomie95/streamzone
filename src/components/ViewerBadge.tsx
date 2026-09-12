@@ -12,6 +12,8 @@ interface ViewerBadgeProps {
   id: string | number;
   active?: boolean;
   large?: boolean;
+  /** Multiplier applied to the displayed count (movies use 0.5). */
+  scale?: number;
 }
 
 /** Random int in [min, max] */
@@ -29,6 +31,7 @@ export default function ViewerBadge({
   id,
   active = true,
   large = false,
+  scale = 1,
 }: ViewerBadgeProps) {
   const count = useViewCount(id, active);
 
@@ -99,7 +102,7 @@ export default function ViewerBadge({
             color: "var(--text)",
           }}
         >
-          {formatViewCount(displayed)}
+          {formatViewCount(Math.round(displayed * scale))}
         </span>
         <span
           style={{
@@ -135,7 +138,7 @@ export default function ViewerBadge({
           animation: active ? "pulse 1.4s infinite" : "none",
         }}
       />
-      {formatViewCount(displayed)}
+      {formatViewCount(Math.round(displayed * scale))}
     </span>
   );
 }

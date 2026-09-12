@@ -27,6 +27,7 @@ import {
   searchMovies,
 } from "../api";
 import ViewerBadge from "../components/ViewerBadge";
+import PlayerAdGate from "../components/PlayerAdGate";
 import {
   useWatchProgress,
   withTimestamp,
@@ -775,7 +776,7 @@ export default function MovieWatch() {
             flexWrap: "wrap",
           }}
         >
-          <ViewerBadge id={id} active={probeStatus === "found"} large />
+          <ViewerBadge id={id} active={probeStatus === "found"} large scale={0.5} />
         </div>
 
         {/* ── TV Episode selector ── */}
@@ -1194,6 +1195,9 @@ export default function MovieWatch() {
                   />
                 </div>
               ) : null}
+              {activeStream && !iframeError && probeStatus !== "probing" && (
+                <PlayerAdGate sessionKey={activeStream.embedUrl} />
+              )}
             </div>
 
             {/* Active stream info bar */}

@@ -5,10 +5,18 @@ import type {
   Movie,
   Genre,
   MediaType,
+  MatchStatus,
+  StreamKind,
 } from "./types";
 
 // ─── Sports API (streamed.pk) ─────────────────────────────────────
 const SPORTS_BASE = "https://streamed.pk/api";
+
+// ─── Sports source switch ─────────────────────────────────────────
+// Currently testing the RapidAPI "Football Live Streaming API" (1xAPI) as the
+// ONLY sports source. streamed.pk + DaddyLive are switched off (code kept
+// intact below) — set this to true to bring them back.
+const LEGACY_SPORTS_SOURCES = false;
 
 // ─── DaddyLive events ───────────────────────────────────────────────
 // Fetched via our own /api/daddy-events server route (see server.js) rather
@@ -218,6 +226,7 @@ function normaliseMatch(m: any): EnrichedMatch {
 }
 
 export async function fetchSports(): Promise<Sport[]> {
+  if (!LEGACY_SPORTS_SOURCES) return []; // sidebar builds from match categories
   const cached = cacheGet<Sport[]>("sports");
   if (cached) return cached;
   try {
@@ -253,6 +262,261 @@ async function fetchStreamedMatches(): Promise<EnrichedMatch[]> {
   return merged;
 }
 
+// ─── Football Live Streaming API (RapidAPI / 1xAPI) ───────────────
+// Fetched via /api/football-live (server.js / api/football-live.js) so the
+// RapidAPI key stays server-side. Each match carries its raw stream servers
+// as `_fxServers` — same round-trip-through-storage trick as `_daddyUrls`.
+interface FxServer {
+  name?: string;
+  url: string;
+  header?: Record<string, string>;
+  type?: string;
+}
+
+interface FxMatch {
+  match_time: string | number;
+  match_status?: string;
+  home_team_name: string;
+  home_team_logo?: string;
+  homeTeamScore?: string | number;
+  away_team_name: string;
+  away_team_logo?: string;
+  awayTeamScore?: string | number;
+  league_name?: string;
+  league_logo?: string;
+  servers?: FxServer[];
+}
+
+const STREAM_PROXY_PATH = "/api/stream-proxy";
+
+function fxStatus(raw: string | undefined, dateMs: number): MatchStatus {
+  const s = (raw ?? "").toLowerCase().trim();
+  if (s === "live") return "live";
+  if (/^(ft|fin|finished|ended|end|full.?time)$/.test(s)) return "finished";
+  // "vs" = not started. Treat long-past kickoffs as finished.
+  return Date.now() - dateMs > 3 * 60 * 60 * 1000 ? "finished" : "upcoming";
+}
+
+// 1xAPI isn't football-only (NCAA American football, FIBA basketball…
+// show up too), so derive the sidebar category from the league name.
+function fxCategory(league = ""): string {
+  const l = league.toLowerCase();
+  if (/american football|\bnfl\b|\bcfl\b/.test(l)) return "american-football";
+  if (/basket|\bnba\b|\bwnba\b|fiba|euroleague/.test(l)) return "basketball";
+  if (/hockey|\bnhl\b|\bkhl\b/.test(l)) return "hockey";
+  if (/baseball|\bmlb\b/.test(l)) return "baseball";
+  if (/tennis|\batp\b|\bwta\b/.test(l)) return "tennis";
+  if (/cricket|\bipl\b/.test(l)) return "cricket";
+  if (/rugby/.test(l)) return "rugby";
+  if (/\bufc\b|\bmma\b|boxing/.test(l)) return "fight";
+  return "football";
+}
+
+function normaliseFxMatch(m: FxMatch): EnrichedMatch & { _fxServers: FxServer[] } {
+  const t = Number(m.match_time);
+  const date = !t ? Date.now() : t < 1e12 ? t * 1000 : t;
+  const home = m.home_team_name ?? "";
+  const away = m.away_team_name ?? "";
+  const slug = (x: string) => normTitle(x).replace(/ /g, "-");
+  const servers = m.servers ?? [];
+  const hasScore =
+    m.homeTeamScore != null && m.homeTeamScore !== "" &&
+    m.awayTeamScore != null && m.awayTeamScore !== "";
+  return {
+    id: `fx_${Math.floor(date / 1000)}_${slug(home)}_${slug(away)}`,
+    title: `${home} vs ${away}`,
+    category: fxCategory(m.league_name),
+    date,
+    popular: servers.length >= 5,
+    teams: {
+      home: { name: home, badge: m.home_team_logo ?? "" },
+      away: { name: away, badge: m.away_team_logo ?? "" },
+    },
+    sources: servers.map((_, i) => ({ source: "1xapi", id: String(i) })),
+    status: fxStatus(m.match_status, date),
+    league: m.league_name ? { name: m.league_name, logo: m.league_logo ?? "" } : undefined,
+    score: hasScore
+      ? { home: String(m.homeTeamScore), away: String(m.awayTeamScore) }
+      : undefined,
+    _fxServers: servers,
+  };
+}
+
+export async function fetchFootballLive(): Promise<EnrichedMatch[]> {
+  const cached = cacheGet<EnrichedMatch[]>("fx");
+  if (cached) return cached;
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), API_TIMEOUT + 10_000);
+  try {
+    const res = await fetch("/api/football-live", { signal: controller.signal });
+    const data = (await res.json().catch(() => ({}))) as {
+      matches?: FxMatch[];
+      error?: string;
+      message?: string;
+    };
+    const quota = res.headers.get("x-quota-remaining");
+    console.info(
+      `[football-live] ${res.status} ${res.headers.get("x-cache") ?? ""} — ${data.matches?.length ?? 0} matches, quota left: ${quota ?? "?"}`,
+    );
+    if (!res.ok) {
+      console.error("[football-live] error:", data.error, data.message ?? "");
+      return [];
+    }
+    const seen = new Set<string>();
+    const out: EnrichedMatch[] = [];
+    for (const raw of data.matches ?? []) {
+      const m = normaliseFxMatch(raw);
+      if (seen.has(m.id)) continue;
+      seen.add(m.id);
+      out.push(m);
+    }
+    cacheSet("fx", out);
+    return out;
+  } catch (e) {
+    console.error("[football-live] fetch failed:", e);
+    return [];
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function parseFxServer(s: FxServer, i: number): Stream {
+  // Extra options may follow a "|" — e.g. "…stream.mpd|drmScheme=clearkey&drmLicense=…"
+  const pipe = s.url.indexOf("|");
+  const rawUrl = pipe > -1 ? s.url.slice(0, pipe) : s.url;
+  const extras = new URLSearchParams(pipe > -1 ? s.url.slice(pipe + 1) : "");
+
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(s.header ?? {})) headers[k.toLowerCase()] = String(v);
+  for (const [k, v] of extras) {
+    if (!/^drm/i.test(k)) headers[k.toLowerCase()] = v;
+  }
+  const scheme = extras.get("drmScheme");
+  const license = extras.get("drmLicense");
+
+  const type = (s.type ?? "direct").toLowerCase();
+  let path = rawUrl.toLowerCase();
+  try {
+    path = new URL(rawUrl).pathname.toLowerCase();
+  } catch {
+    /* keep raw */
+  }
+  const kind: StreamKind =
+    path.endsWith(".mpd") || type === "drm" ? "dash" : path.endsWith(".flv") ? "flv" : "hls";
+  const name = s.name?.trim() || `Server ${i + 1}`;
+  // Many servers come in pairs: …_lhd (HD) / …_lsd (SD). Surfacing the tier
+  // lets viewers on slow connections pick the lighter stream.
+  const tier = /(_lhd|_hd|[_-](720|1080)p?)(\.|$)/.test(path)
+    ? "HD"
+    : /(_lsd|_sd|[_-](360|480|540)p?)(\.|$)/.test(path)
+      ? "SD"
+      : "";
+
+  return {
+    id: `fx_${i}`,
+    streamNo: i + 1,
+    language: `${kind.toUpperCase()}${tier ? ` · ${tier}` : ""}${type !== "direct" ? ` · ${type}` : ""}`,
+    hd: tier === "HD" || /\b(hd|fhd|720p?|1080p?)\b/i.test(name),
+    embedUrl: rawUrl,
+    source: "1xAPI",
+    label: name,
+    kind,
+    headers,
+    drm: scheme || license ? { scheme: scheme ?? "clearkey", license: license ?? "" } : undefined,
+    // Relay when a Referer is required, or when an http:// stream would be
+    // blocked as mixed content on an https page.
+    proxy:
+      type === "referer" ||
+      "referer" in headers ||
+      "origin" in headers ||
+      (rawUrl.startsWith("http:") && window.location.protocol === "https:"),
+  };
+}
+
+export function getFootballLiveStreams(match: EnrichedMatch): Stream[] {
+  const servers: FxServer[] =
+    (match as EnrichedMatch & { _fxServers?: FxServer[] })._fxServers ?? [];
+  const seen = new Set<string>();
+  const out: Stream[] = [];
+  servers.forEach((srv, i) => {
+    if (!srv?.url) return;
+    const st = parseFxServer(srv, i);
+    if (seen.has(st.embedUrl)) return;
+    seen.add(st.embedUrl);
+    out.push(st);
+  });
+  // Try the most reliable formats first: HLS (direct, then relayed), then
+  // FLV (continuous stream, often geo/ISP-blocked), then DRM/DASH. Keeps the
+  // auto-failover from spending its first attempts on the flakiest servers.
+  const rank = (x: Stream) =>
+    x.kind === "hls" ? (x.proxy ? 1 : 0) : x.kind === "flv" ? 2 : 3;
+  return out
+    .map((st, i) => ({ st, i }))
+    .sort((a, b) => rank(a.st) - rank(b.st) || a.i - b.i)
+    .map(({ st }, i) => ({ ...st, streamNo: i + 1 }));
+}
+
+export function isMediaStream(s: Stream | null | undefined): boolean {
+  return !!s?.kind && s.kind !== "iframe";
+}
+
+// ─── Unreachable stream hosts ─────────────────────────────────────
+// 1xAPI lists many servers per host (e.g. 6+ on one CDN per match). When a
+// host is unreachable from this viewer's network (DNS/SSL/ISP block), every
+// server on it fails the same way — remember it for a while so the Watch
+// page skips them instead of timing out on each one.
+const FAILED_HOSTS_KEY = "sz_failed_stream_hosts";
+const FAILED_HOST_TTL_MS = 10 * 60 * 1000;
+
+function streamHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
+function readFailedHosts(): Record<string, number> {
+  try {
+    return JSON.parse(sessionStorage.getItem(FAILED_HOSTS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+export function markStreamHostFailed(url: string): void {
+  const host = streamHost(url);
+  if (!host) return;
+  const hosts = readFailedHosts();
+  hosts[host] = Date.now();
+  try {
+    sessionStorage.setItem(FAILED_HOSTS_KEY, JSON.stringify(hosts));
+  } catch {
+    /* noop */
+  }
+}
+
+export function isStreamHostFailed(url: string): boolean {
+  const at = readFailedHosts()[streamHost(url)];
+  return !!at && Date.now() - at < FAILED_HOST_TTL_MS;
+}
+
+// Absolute URL (shaka maps proxied → original URLs by exact string).
+export function streamProxyUrl(url: string, headers?: Record<string, string>): string {
+  const fwd: Record<string, string> = {};
+  for (const k of ["user-agent", "referer", "origin"]) {
+    if (headers?.[k]) fwd[k] = headers[k];
+  }
+  let h = "";
+  if (Object.keys(fwd).length > 0) {
+    let bin = "";
+    new TextEncoder().encode(JSON.stringify(fwd)).forEach((b) => (bin += String.fromCharCode(b)));
+    h = btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  return `${window.location.origin}${STREAM_PROXY_PATH}?url=${encodeURIComponent(url)}${h ? `&h=${h}` : ""}`;
+}
+
 // ─── fetchAllMatches: race streamed.pk vs DaddyLive ───────────────
 // Whichever API responds first becomes the "primary" and renders immediately.
 // The slower one then merges in its unique events silently after.
@@ -260,6 +524,12 @@ async function fetchStreamedMatches(): Promise<EnrichedMatch[]> {
 export async function fetchAllMatches(
   onFirstLoad?: (matches: EnrichedMatch[]) => void
 ): Promise<EnrichedMatch[]> {
+  if (!LEGACY_SPORTS_SOURCES) {
+    const matches = await fetchFootballLive();
+    onFirstLoad?.(matches);
+    return matches;
+  }
+
   let firstLoadFired = false;
 
   function fireFirstLoad(matches: EnrichedMatch[]) {

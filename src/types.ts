@@ -29,7 +29,13 @@ export interface EnrichedMatch {
   teams?: { home?: Team; away?: Team };
   sources: MatchSource[];
   status: MatchStatus;
+  league?: { name: string; logo: string };
+  score?: { home: string; away: string };
 }
+
+// "iframe" = third-party embed page (streamed.pk / DaddyLive).
+// hls / dash / flv = raw media URL played in our own <video> (1xAPI).
+export type StreamKind = "iframe" | "hls" | "dash" | "flv";
 
 export interface Stream {
   id: string;
@@ -38,6 +44,12 @@ export interface Stream {
   hd: boolean;
   embedUrl: string;
   source: string;
+  label?: string;
+  kind?: StreamKind;
+  headers?: Record<string, string>;
+  drm?: { scheme: string; license: string };
+  // true = must go through /api/stream-proxy (needs Referer/Origin header)
+  proxy?: boolean;
 }
 
 // ─── Movies ───────────────────────────────────────────────────────

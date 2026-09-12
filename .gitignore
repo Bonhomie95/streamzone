@@ -23,3 +23,5 @@ dist-ssr
 *.sw?
 .env
 dist/
+scripts/football-api-sample.json
+

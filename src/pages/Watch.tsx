@@ -21,8 +21,15 @@ import {
   fetchAllMatches,
   badgeUrl,
   getDaddyStreams,
+  getFootballLiveStreams,
+  isMediaStream,
+  isStreamHostFailed,
+  markStreamHostFailed,
 } from "../api";
 import MatchCard from "../components/MatchCard";
+import LivePlayer from "../components/LivePlayer";
+import PlayerAdGate from "../components/PlayerAdGate";
+import { usePlayerAdGate } from "../hooks/usePlayerAdGate";
 import ViewerBadge from "../components/ViewerBadge";
 import AdBanner from "../components/AdBanner";
 import type { EnrichedMatch, Stream } from "../types";
@@ -91,6 +98,8 @@ export default function Watch() {
   const [match, setMatch] = useState<EnrichedMatch | null>(null);
   const [streams, setStreams] = useState<Stream[]>([]);
   const [activeStream, setActiveStream] = useState<Stream | null>(null);
+  // Player click ads (2 clicks → new tabs, then 30 min cooldown)
+  const adGate = usePlayerAdGate(activeStream?.embedUrl ?? "");
   // Per-stream health status from the backend probe. Streams that come back
   // "dead" are hidden from the source list; "ok" ones get a green flag.
   const [sourceStatuses, setSourceStatuses] = useState<
@@ -289,6 +298,35 @@ export default function Watch() {
     setIframeError(false);
     clearRetryTimers();
 
+    // 1xAPI: raw media servers are embedded in the match as _fxServers and
+    // played by LivePlayer (no iframe, so no embed probe).
+    if (m.id.startsWith("fx_")) {
+      let s = getFootballLiveStreams(m);
+      if (s.length === 0) {
+        try {
+          const all = await fetchAllMatches();
+          const fresh = all.find((x) => x.id === m.id);
+          if (fresh) s = getFootballLiveStreams(fresh);
+        } catch {
+          /* noop */
+        }
+      }
+      setStreams(s);
+      // Hide servers on hosts that already proved unreachable this session,
+      // and start on the first one that isn't.
+      setSourceStatuses(
+        Object.fromEntries(
+          s
+            .filter((x) => isStreamHostFailed(x.embedUrl))
+            .map((x) => [x.id, "dead" as const]),
+        ),
+      );
+      if (s.length > 0)
+        setActiveStream(s.find((x) => !isStreamHostFailed(x.embedUrl)) ?? s[0]);
+      setLoadingStreams(false);
+      return;
+    }
+
     // DaddyLive: stream URLs are embedded in the match object as _daddyUrls.
     // They survive localStorage/sessionStorage because JSON.stringify includes
     // all own enumerable properties — _daddyUrls is set directly on the object,
@@ -374,6 +412,43 @@ export default function Watch() {
     }, AUTO_RETRY_MS);
   }, [activeStream, streams]);
 
+  // ─── Media stream (LivePlayer) failure ────────────────────────────
+  // LivePlayer has already tried the server directly and via the relay, so
+  // the 3s "blocked" countdown adds nothing — jump straight to the next
+  // candidate. If the host itself was unreachable (DNS/SSL/refused, relay
+  // 502), every other server on that host fails the same way on this
+  // network, so remember the host and skip/hide all of its servers.
+  const handleMediaError = useCallback(
+    ({ hostUnreachable }: { hostUnreachable: boolean }) => {
+      if (!activeStream) return;
+      if (hostUnreachable) markStreamHostFailed(activeStream.embedUrl);
+
+      const dead = new Set(
+        streams
+          .filter(
+            (s) =>
+              s.embedUrl === activeStream.embedUrl ||
+              (sourceStatuses[s.id] ?? "unknown") === "dead" ||
+              isStreamHostFailed(s.embedUrl),
+          )
+          .map((s) => s.id),
+      );
+      setSourceStatuses((prev) => {
+        const updated = { ...prev };
+        for (const id of dead) updated[id] = "dead";
+        return updated;
+      });
+
+      const idx = streams.findIndex((s) => s.embedUrl === activeStream.embedUrl);
+      const next = [...streams.slice(idx + 1), ...streams.slice(0, idx)].find(
+        (s) => !dead.has(s.id),
+      );
+      if (next) switchStream(next);
+      else setIframeError(true); // every server failed — show the error panel
+    },
+    [activeStream, streams, sourceStatuses],
+  );
+
   // Clean up timers on unmount
   useEffect(() => () => clearRetryTimers(), []);
 
@@ -384,7 +459,8 @@ export default function Watch() {
   // embed is blocked, switch to direct mode, and remember that for this
   // browser so we never sit on a blank iframe again.
   useEffect(() => {
-    if (isTV || !activeStream) return; // already in direct mode, nothing to watch
+    // already in direct mode, or a <video> stream (no iframe to watch)
+    if (isTV || !activeStream || isMediaStream(activeStream)) return;
     iframeLoadedRef.current = false;
     if (loadWatchdogRef.current) clearTimeout(loadWatchdogRef.current);
     loadWatchdogRef.current = setTimeout(() => {
@@ -989,7 +1065,7 @@ export default function Watch() {
                         flexWrap: "wrap",
                       }}
                     >
-                      {streams
+                      {visibleStreams
                         .filter((s) => s.embedUrl !== activeStream?.embedUrl)
                         .slice(0, 3)
                         .map((s, i) => (
@@ -1022,7 +1098,7 @@ export default function Watch() {
                                 HD
                               </span>
                             )}
-                            {s.source} #{s.streamNo}
+                            {s.label ?? `${s.source} #${s.streamNo}`}
                           </button>
                         ))}
                       {activeStream && (
@@ -1050,7 +1126,7 @@ export default function Watch() {
                     </div>
                   </div>
                 </div>
-              ) : activeStream && isTV ? (
+              ) : activeStream && isTV && !isMediaStream(activeStream) ? (
                 <div
                   style={{
                     position: "absolute",
@@ -1084,6 +1160,14 @@ export default function Watch() {
                 </div>
               ) : activeStream ? (
                 <>
+                  {isMediaStream(activeStream) ? (
+                    <LivePlayer
+                      key={activeStream.embedUrl}
+                      stream={activeStream}
+                      onFatalError={handleMediaError}
+                      hold={adGate.locked}
+                    />
+                  ) : (
                   <iframe
                     key={activeStream.embedUrl}
                     ref={iframeRef}
@@ -1107,7 +1191,8 @@ export default function Watch() {
                     }}
                     onError={handleIframeError}
                   />
-                  {showSwitchHint && (() => {
+                  )}
+                  {showSwitchHint && !isMediaStream(activeStream) && (() => {
                     const idx = streams.findIndex((s) => s.embedUrl === activeStream.embedUrl);
                     const next = streams[idx + 1] ?? streams[0];
                     return (
@@ -1138,10 +1223,13 @@ export default function Watch() {
                   })()}
                 </>
               ) : null}
+              {activeStream && !loadingStreams && !iframeError && (
+                <PlayerAdGate gate={adGate} />
+              )}
             </div>
 
             {/* Manual escape hatch — covers TVs/devices that detection misses */}
-            {activeStream && !isTV && (
+            {activeStream && !isTV && !isMediaStream(activeStream) && (
               <button
                 onClick={() => setDirectMode(true)}
                 style={{
@@ -1859,9 +1947,10 @@ function StreamSidebar({
                         gap: 5,
                       }}
                     >
-                      {groupEntries.length === 1
-                        ? sourceName
-                        : `Stream ${s.streamNo}`}
+                      {s.label ??
+                        (groupEntries.length === 1
+                          ? sourceName
+                          : `Stream ${s.streamNo}`)}
                       {s.hd && (
                         <span
                           style={{

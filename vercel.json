@@ -14,6 +14,8 @@
     "api/movie-probe.js": { "maxDuration": 10 },
     "api/embed-proxy.js": { "maxDuration": 15 },
     "api/daddy-events.js": { "maxDuration": 15 },
+    "api/football-live.js": { "maxDuration": 30 },
+    "api/stream-proxy.js": { "maxDuration": 60 },
     "api/views/index.js": { "maxDuration": 10 },
     "api/views/[...id].js": { "maxDuration": 10 }
   }
