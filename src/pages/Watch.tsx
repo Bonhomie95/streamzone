@@ -682,6 +682,18 @@ export default function Watch() {
   );
   const visibleStreams = aliveStreams.length > 0 ? aliveStreams : streams;
 
+  // SD/HD servers carrying the same feed as the active one (…_lsd / …_lhd),
+  // offered in the player's quality menu.
+  const qualityAlternatives = activeStream?.qualityGroup
+    ? streams.filter(
+        (s) =>
+          s.tier &&
+          s.qualityGroup === activeStream.qualityGroup &&
+          (s.embedUrl === activeStream.embedUrl ||
+            (sourceStatuses[s.id] ?? "unknown") !== "dead"),
+      )
+    : [];
+
   return (
     <div
       style={{
@@ -1166,6 +1178,12 @@ export default function Watch() {
                       stream={activeStream}
                       onFatalError={handleMediaError}
                       hold={adGate.locked}
+                      alternatives={qualityAlternatives.map((s) => ({
+                        id: s.id,
+                        label: `${s.tier} · ${s.label ?? s.source}`,
+                        active: s.embedUrl === activeStream.embedUrl,
+                        onSelect: () => switchStream(s),
+                      }))}
                     />
                   ) : (
                   <iframe

@@ -28,6 +28,14 @@ type Starter = (
   onQuality: (levels: QualityLevel[], select: (id: number) => void) => void,
 ) => Promise<Cleanup>;
 
+// Another server carrying the same feed in a different quality (SD/HD pair).
+export interface QualityAlternative {
+  id: string;
+  label: string;
+  active: boolean;
+  onSelect: () => void;
+}
+
 export interface QualityLevel {
   id: number;
   label: string;
@@ -247,11 +255,13 @@ export default function LivePlayer({
   stream,
   onFatalError,
   hold = false,
+  alternatives,
 }: {
   stream: Stream;
   onFatalError: (info: { hostUnreachable: boolean }) => void;
   // true = keep the video paused (e.g. while the player ad gate is showing)
   hold?: boolean;
+  alternatives?: QualityAlternative[];
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [phase, setPhase] = useState<"loading" | "relay" | "playing">("loading");
@@ -262,6 +272,7 @@ export default function LivePlayer({
   const [levels, setLevels] = useState<QualityLevel[]>([]);
   const [currentLevel, setCurrentLevel] = useState(-1);
   const [showQuality, setShowQuality] = useState(false);
+  const [videoHeight, setVideoHeight] = useState(0);
 
   // Hold/release playback without restarting the stream.
   useEffect(() => {
@@ -302,8 +313,11 @@ export default function LivePlayer({
       setPhase("playing");
     };
     const onVolume = () => setMuted(video.muted);
+    const onResize = () => setVideoHeight(video.videoHeight);
     video.addEventListener("playing", onPlaying);
     video.addEventListener("volumechange", onVolume);
+    video.addEventListener("resize", onResize);
+    video.addEventListener("loadedmetadata", onResize);
 
     const tryPlay = () => {
       video.play().catch((e: unknown) => {
@@ -368,6 +382,8 @@ export default function LivePlayer({
       clearTimeout(timer);
       video.removeEventListener("playing", onPlaying);
       video.removeEventListener("volumechange", onVolume);
+      video.removeEventListener("resize", onResize);
+      video.removeEventListener("loadedmetadata", onResize);
       cleanup?.();
     };
   }, [stream]);
@@ -381,7 +397,9 @@ export default function LivePlayer({
         autoPlay={!hold}
         style={{ width: "100%", height: "100%", display: "block", background: "#000" }}
       />
-      {levels.length > 1 && (() => {
+      {/* Quality menu — always available once playing. Lists the stream's own
+          renditions (when it has several) plus same-feed SD/HD servers. */}
+      {phase === "playing" && (() => {
         // Highest first; disambiguate renditions that share a resolution.
         const sorted = [...levels].sort(
           (a, b) => b.height - a.height || b.bitrate - a.bitrate,
@@ -399,7 +417,30 @@ export default function LivePlayer({
                 : l.label,
           })),
         ];
+        const hasLevels = levels.length > 1;
         const current = options.find((o) => o.id === currentLevel) ?? options[0];
+        const buttonLabel =
+          hasLevels && currentLevel !== -1
+            ? current.label
+            : hasLevels
+              ? `Auto${videoHeight ? ` · ${videoHeight}p` : ""}`
+              : videoHeight
+                ? `${videoHeight}p`
+                : "Quality";
+        const alts = alternatives ?? [];
+        const itemStyle = {
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          textAlign: "left" as const,
+          padding: "7px 10px",
+          borderRadius: 6,
+          border: "none",
+          color: "#fff",
+          fontSize: "0.78rem",
+          fontWeight: 600,
+          cursor: "pointer",
+        };
         return (
           <div style={{ position: "absolute", top: 12, right: 12, zIndex: 4 }}>
             <button
@@ -421,7 +462,7 @@ export default function LivePlayer({
               }}
             >
               <Settings size={13} />
-              {current.label}
+              {buttonLabel}
             </button>
             {showQuality && (
               <div
@@ -439,7 +480,7 @@ export default function LivePlayer({
                   gap: 2,
                 }}
               >
-                {options.map((o) => (
+                {hasLevels && options.map((o) => (
                   <button
                     key={o.id}
                     type="button"
@@ -471,6 +512,57 @@ export default function LivePlayer({
                     )}
                   </button>
                 ))}
+                {alts.length > 1 && (
+                  <>
+                    <div
+                      style={{
+                        padding: "8px 10px 4px",
+                        fontSize: "0.62rem",
+                        fontWeight: 700,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        color: "var(--text3)",
+                        borderTop: hasLevels ? "1px solid var(--border2)" : "none",
+                        marginTop: hasLevels ? 4 : 0,
+                      }}
+                    >
+                      Same match, other quality
+                    </div>
+                    {alts.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => {
+                          setShowQuality(false);
+                          if (!a.active) a.onSelect();
+                        }}
+                        style={{
+                          ...itemStyle,
+                          background: a.active ? "var(--accent)" : "transparent",
+                        }}
+                      >
+                        <span>{a.label}</span>
+                        {a.active && (
+                          <span style={{ opacity: 0.7, fontWeight: 500 }}>playing</span>
+                        )}
+                      </button>
+                    ))}
+                  </>
+                )}
+                {!hasLevels && alts.length <= 1 && (
+                  <div
+                    style={{
+                      padding: "8px 10px",
+                      maxWidth: 210,
+                      fontSize: "0.75rem",
+                      lineHeight: 1.45,
+                      color: "var(--text2)",
+                    }}
+                  >
+                    This server streams in {videoHeight ? `${videoHeight}p` : "one quality"} only.
+                    For a lighter stream, pick a server marked <b>SD</b> in the list.
+                  </div>
+                )}
               </div>
             )}
           </div>

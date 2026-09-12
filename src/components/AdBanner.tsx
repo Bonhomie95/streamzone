@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type AdSize = "leaderboard" | "rectangle" | "mobile" | "native";
 
@@ -7,7 +7,10 @@ interface AdBannerProps {
   className?: string;
 }
 
-const LOAD_REMOTE_ADS_ON_LOCALHOST = false;
+// Add ?ads=1 to a localhost URL to load the real ad scripts while testing.
+const LOAD_REMOTE_ADS_ON_LOCALHOST =
+  typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).has("ads");
 
 // ─── Ad configurations ────────────────────────────────────────────
 // leaderboard → 728×90  (highperformanceformat.com)
@@ -41,42 +44,49 @@ function effectiveSize(size: AdSize, windowWidth: number): AdSize {
 }
 
 // ─── Standard iframe banner injection ────────────────────────────
-// FIX: Use useEffect + useRef instead of ref callback + WeakSet.
-// React StrictMode double-invokes ref callbacks (mount→null→mount),
-// which caused the WeakSet guard to permanently block injection on
-// the second mount. useEffect fires once after the real mount.
+// Each banner runs inside its own srcdoc iframe. The ad tag configures itself
+// through a *global* `atOptions`, so injecting two banners into the same page
+// (leaderboard + rectangle) made the second overwrite the first's config
+// before its invoke.js ran. An iframe per banner gives each its own global.
+//
+// If the banner host fails to load (ad blockers, ISP/network blocks), the
+// iframe reports back and the slot falls back to the native banner, which is
+// served from a different ad domain.
+
+function bannerDoc(cfg: { key: string; width: number; height: number }) {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;overflow:hidden;background:transparent;display:flex;justify-content:center}</style></head><body>
+<script>atOptions = { 'key': '${cfg.key}', 'format': 'iframe', 'height': ${cfg.height}, 'width': ${cfg.width}, 'params': {} };</script>
+<script src="https://www.highperformanceformat.com/${cfg.key}/invoke.js" onerror="parent.postMessage({ szAdFailed: '${cfg.key}' }, '*')"></script>
+</body></html>`;
+}
 
 function BannerAd({
   cfg,
 }: {
   cfg: { key: string; width: number; height: number };
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const injected = useRef(false);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [failed, setFailed] = useState(false);
+  const [useNativeFallback, setUseNativeFallback] = useState(false);
 
   useEffect(() => {
-    const node = containerRef.current;
-    if (!node || injected.current) return;
-    injected.current = true;
+    function onMessage(e: MessageEvent) {
+      if (e.source !== frameRef.current?.contentWindow) return;
+      if ((e.data as { szAdFailed?: string } | null)?.szAdFailed !== cfg.key) return;
+      // Only one native banner can exist per page (it targets a fixed id).
+      setUseNativeFallback(!document.getElementById(NATIVE_CONTAINER_ID));
+      setFailed(true);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [cfg.key]);
 
-    node.innerHTML = "";
-
-    const optionsScript = document.createElement("script");
-    optionsScript.type = "text/javascript";
-    optionsScript.text = `atOptions = { 'key': '${cfg.key}', 'format': 'iframe', 'height': ${cfg.height}, 'width': ${cfg.width}, 'params': {} };`;
-
-    const invokeScript = document.createElement("script");
-    invokeScript.type = "text/javascript";
-    invokeScript.src = `https://www.highperformanceformat.com/${cfg.key}/invoke.js`;
-    invokeScript.async = true;
-
-    node.appendChild(optionsScript);
-    node.appendChild(invokeScript);
-  }, [cfg.key, cfg.width, cfg.height]);
+  if (failed) {
+    return useNativeFallback ? <NativeBannerAd /> : null;
+  }
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: "100%",
         maxWidth: cfg.width,
@@ -87,7 +97,17 @@ function BannerAd({
         justifyContent: "center",
         overflow: "hidden",
       }}
-    />
+    >
+      <iframe
+        ref={frameRef}
+        title="Advertisement"
+        srcDoc={bannerDoc(cfg)}
+        width={cfg.width}
+        height={cfg.height}
+        scrolling="no"
+        style={{ border: "none", display: "block", maxWidth: "100%" }}
+      />
+    </div>
   );
 }
 

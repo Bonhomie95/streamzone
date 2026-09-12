@@ -424,6 +424,15 @@ export default function MovieHome() {
           {!loading && !searching && displayMovies.length > 0 && totalPages > 1 && (
             <Pagination page={page} totalPages={totalPages} onChange={goToPage} />
           )}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              padding: "16px 0 8px",
+            }}
+          >
+            <AdBanner size="rectangle" />
+          </div>
         </main>
       </div>
     </div>

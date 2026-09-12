@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "streamzone-adtest",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "VITE_PLAYER_AD_URLS=https://example.com/?ad=1,https://example.org/?ad=2 npx concurrently -k \"PORT=3001 node server.js\" \"vite --port 5180 --strictPort\""],
+      "port": 5180
+    }
+  ]
+}

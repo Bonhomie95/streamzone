@@ -50,6 +50,9 @@ export interface Stream {
   drm?: { scheme: string; license: string };
   // true = must go through /api/stream-proxy (needs Referer/Origin header)
   proxy?: boolean;
+  // SD/HD tier and same-feed group for paired servers (…_lsd / …_lhd)
+  tier?: "SD" | "HD";
+  qualityGroup?: string;
 }
 
 // ─── Movies ───────────────────────────────────────────────────────

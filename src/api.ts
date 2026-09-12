@@ -381,6 +381,18 @@ export async function fetchFootballLive(): Promise<EnrichedMatch[]> {
   }
 }
 
+// Servers that carry the same feed in different qualities share a URL apart
+// from a _lhd/_lsd (or _hd/_sd) suffix — group them so the player can offer
+// the other quality.
+function qualityGroupOf(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.host + u.pathname.replace(/_(lhd|lsd|hd|sd)(?=\.[a-z0-9]+$)/i, "");
+  } catch {
+    return url;
+  }
+}
+
 function parseFxServer(s: FxServer, i: number): Stream {
   // Extra options may follow a "|" — e.g. "…stream.mpd|drmScheme=clearkey&drmLicense=…"
   const pipe = s.url.indexOf("|");
@@ -420,6 +432,8 @@ function parseFxServer(s: FxServer, i: number): Stream {
     hd: tier === "HD" || /\b(hd|fhd|720p?|1080p?)\b/i.test(name),
     embedUrl: rawUrl,
     source: "1xAPI",
+    tier: tier || undefined,
+    qualityGroup: qualityGroupOf(rawUrl),
     label: name,
     kind,
     headers,
