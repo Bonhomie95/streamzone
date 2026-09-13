@@ -12,11 +12,9 @@ import type {
 // ─── Sports API (streamed.pk) ─────────────────────────────────────
 const SPORTS_BASE = "https://streamed.pk/api";
 
-// ─── Sports source switch ─────────────────────────────────────────
-// Currently testing the RapidAPI "Football Live Streaming API" (1xAPI) as the
-// ONLY sports source. streamed.pk + DaddyLive are switched off (code kept
-// intact below) — set this to true to bring them back.
-const LEGACY_SPORTS_SOURCES = false;
+// ─── Sports sources ───────────────────────────────────────────────
+// Football comes ONLY from the paid 1xAPI (RapidAPI). streamed.pk and
+// DaddyLive supply every other sport — any football they list is dropped.
 
 // ─── DaddyLive events ───────────────────────────────────────────────
 // Fetched via our own /api/daddy-events server route (see server.js) rather
@@ -81,6 +79,31 @@ function normTitle(t: string) {
   return t.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+// DaddyLive categories are free text ("Soccer", "Ice Hockey", "Formula 1"…).
+// Map them onto streamed.pk's sport ids so the sidebar groups them together
+// and football can be filtered out reliably.
+export function normaliseSportCategory(raw: string): string {
+  const c = raw.toLowerCase().trim();
+  if (/american football|\bnfl\b|\bncaaf\b|\bcfl\b/.test(c)) return "american-football";
+  if (/soccer|football|futbol|premier league|la liga|laliga|bundesliga|serie a|ligue 1|eredivisie|uefa|champions league|europa league|fifa|\bmls\b|\befl\b|fa cup|copa/.test(c))
+    return "football";
+  if (/basket|\bnba\b|\bwnba\b|euroleague|\bncaab\b/.test(c)) return "basketball";
+  if (/hockey|\bnhl\b|\bkhl\b/.test(c)) return "hockey";
+  if (/baseball|\bmlb\b/.test(c)) return "baseball";
+  if (/motor|formula|\bf1\b|motogp|nascar|indycar|rally|racing/.test(c)) return "motor-sports";
+  if (/boxing|\bmma\b|\bufc\b|wwe|wrestling|fight|kickboxing/.test(c)) return "fight";
+  if (/tennis|\batp\b|\bwta\b/.test(c)) return "tennis";
+  if (/rugby/.test(c)) return "rugby";
+  if (/cricket|\bipl\b/.test(c)) return "cricket";
+  if (/golf|\bpga\b/.test(c)) return "golf";
+  if (/darts/.test(c)) return "darts";
+  if (/snooker|billiard|pool/.test(c)) return "billiards";
+  if (/\bafl\b|aussie rules|australian rules/.test(c)) return "afl";
+  return c.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "other";
+}
+
+const isFootball = (m: EnrichedMatch) => m.category === "football";
+
 // ─── DaddyLive ────────────────────────────────────────────────────
 export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
   const cached = cacheGet<EnrichedMatch[]>("daddy");
@@ -112,7 +135,7 @@ export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
       for (const [category, events] of Object.entries(day.categories)) {
         for (const ev of events) {
           const isLive = ev.time?.toLowerCase() === "live";
-          const sportCategory = category.toLowerCase().trim();
+          const sportCategory = normaliseSportCategory(category);
           const colonIdx = ev.event.indexOf(":");
           const matchTitle =
             colonIdx > -1 ? ev.event.slice(colonIdx + 1).trim() : ev.event;
@@ -226,7 +249,6 @@ function normaliseMatch(m: any): EnrichedMatch {
 }
 
 export async function fetchSports(): Promise<Sport[]> {
-  if (!LEGACY_SPORTS_SOURCES) return []; // sidebar builds from match categories
   const cached = cacheGet<Sport[]>("sports");
   if (cached) return cached;
   try {
@@ -531,56 +553,46 @@ export function streamProxyUrl(url: string, headers?: Record<string, string>): s
   return `${window.location.origin}${STREAM_PROXY_PATH}?url=${encodeURIComponent(url)}${h ? `&h=${h}` : ""}`;
 }
 
-// ─── fetchAllMatches: race streamed.pk vs DaddyLive ───────────────
-// Whichever API responds first becomes the "primary" and renders immediately.
-// The slower one then merges in its unique events silently after.
-// onFirstLoad(matches) fires as soon as the faster source wins.
+// ─── fetchAllMatches ──────────────────────────────────────────────
+// Football: 1xAPI only. Other sports: streamed.pk (richer data: badges,
+// posters), then DaddyLive events streamed.pk doesn't have, then any rare
+// non-football 1xAPI match — football from the free sources is discarded.
+// All three are fetched in parallel; onFirstLoad(matches) fires as soon as
+// the first source returns something so the grid renders immediately.
 export async function fetchAllMatches(
   onFirstLoad?: (matches: EnrichedMatch[]) => void
 ): Promise<EnrichedMatch[]> {
-  if (!LEGACY_SPORTS_SOURCES) {
-    const matches = await fetchFootballLive();
-    onFirstLoad?.(matches);
-    return matches;
-  }
-
   let firstLoadFired = false;
-
   function fireFirstLoad(matches: EnrichedMatch[]) {
-    if (firstLoadFired) return;
+    if (firstLoadFired || matches.length === 0) return;
     firstLoadFired = true;
     onFirstLoad?.(matches);
   }
 
-  const streamedPromise = fetchStreamedMatches()
-    .then((matches) => {
-      if (matches.length > 0) fireFirstLoad(matches);
-      return { source: "streamed" as const, matches };
-    })
-    .catch(() => ({ source: "streamed" as const, matches: [] as EnrichedMatch[] }));
+  const [fxMatches, streamedOther, daddyOther] = await Promise.all([
+    fetchFootballLive()
+      .then((ms) => (fireFirstLoad(ms), ms))
+      .catch(() => [] as EnrichedMatch[]),
+    fetchStreamedMatches()
+      .then((ms) => ms.filter((m) => !isFootball(m)))
+      .then((ms) => (fireFirstLoad(ms), ms))
+      .catch(() => [] as EnrichedMatch[]),
+    fetchDaddyEvents()
+      .then((ms) => ms.filter((m) => !isFootball(m)))
+      .then((ms) => (fireFirstLoad(ms), ms))
+      .catch(() => [] as EnrichedMatch[]),
+  ]);
 
-  const daddyPromise = fetchDaddyEvents()
-    .then((matches) => {
-      if (matches.length > 0) fireFirstLoad(matches);
-      return { source: "daddy" as const, matches };
-    })
-    .catch(() => ({ source: "daddy" as const, matches: [] as EnrichedMatch[] }));
-
-  const [streamedResult, daddyResult] = await Promise.all([streamedPromise, daddyPromise]);
-
-  const streamedMatches = streamedResult.matches;
-  const daddyMatches = daddyResult.matches;
-
-  // Prefer streamed.pk entries (richer data: badges, posters).
-  // DaddyLive fills in events not covered by streamed.pk.
-  const streamedKeys = new Set(
-    streamedMatches.map((m) => `${normTitle(m.title)}::${m.status}`)
-  );
-  const uniqueDaddy = daddyMatches.filter(
-    (d) => !streamedKeys.has(`${normTitle(d.title)}::${d.status}`)
-  );
-
-  return [...streamedMatches, ...uniqueDaddy];
+  const football = fxMatches.filter(isFootball);
+  const others: EnrichedMatch[] = [];
+  const seen = new Set<string>();
+  for (const m of [...streamedOther, ...daddyOther, ...fxMatches.filter((x) => !isFootball(x))]) {
+    const k = `${normTitle(m.title)}::${m.status}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    others.push(m);
+  }
+  return [...football, ...others];
 }
 
 export async function fetchStreams(
