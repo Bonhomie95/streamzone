@@ -9,6 +9,7 @@ import AdBanner from '../components/AdBanner';
 import AdPopup from '../components/AdPopup';
 import AddToHomeScreen from '../components/AddToHomeScreen';
 import { fetchSports, fetchAllMatches } from '../api';
+import { sortByRelevance } from '../utils/matchRelevance';
 import { useFavouriteTeams, getPreferredSport, recordSportClick } from '../hooks/useFavourites';
 import type { Sport, EnrichedMatch, MatchStatus } from '../types';
 import type { StatusFilter } from '../components/StatusTabs';
@@ -205,7 +206,9 @@ export default function Home() {
         m.teams?.away?.name.toLowerCase().includes(q)
       );
     }
-    return result;
+    // Most relevant first (top leagues, big clubs, popular events) — see
+    // utils/matchRelevance.ts — rather than raw kickoff time.
+    return sortByRelevance(result);
   }, [allMatches, selectedSport, statusFilter, searchQuery, favouriteMatches]);
 
   const statusCounts = useMemo(() => {

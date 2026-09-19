@@ -8,6 +8,7 @@ import type {
   MatchStatus,
   StreamKind,
 } from "./types";
+import { footballLeagueTier, hasBigClub } from "./utils/matchRelevance";
 
 // ─── Sports API (streamed.pk) ─────────────────────────────────────
 const SPORTS_BASE = "https://streamed.pk/api";
@@ -324,12 +325,14 @@ function fxStatus(raw: string | undefined, dateMs: number): MatchStatus {
 function fxCategory(league = ""): string {
   const l = league.toLowerCase();
   if (/american football|\bnfl\b|\bcfl\b/.test(l)) return "american-football";
-  if (/basket|\bnba\b|\bwnba\b|fiba|euroleague/.test(l)) return "basketball";
+  // 1xAPI also lists basketball leagues by code only (NBL, VBA, LKL…)
+  if (/basket|\bnba\b|\bwnba\b|fiba|euroleague|^(nbl|vba|lkl|czbl|gbbl|acb|bbl|lnb|kbl|cba|pba|bsl|abl)$/.test(l))
+    return "basketball";
   if (/hockey|\bnhl\b|\bkhl\b/.test(l)) return "hockey";
   if (/baseball|\bmlb\b/.test(l)) return "baseball";
   if (/tennis|\batp\b|\bwta\b/.test(l)) return "tennis";
   if (/cricket|\bipl\b/.test(l)) return "cricket";
-  if (/rugby/.test(l)) return "rugby";
+  if (/rugby|^nrl$/.test(l)) return "rugby";
   if (/\bufc\b|\bmma\b|boxing/.test(l)) return "fight";
   return "football";
 }
@@ -349,7 +352,9 @@ function normaliseFxMatch(m: FxMatch): EnrichedMatch & { _fxServers: FxServer[] 
     title: `${home} vs ${away}`,
     category: fxCategory(m.league_name),
     date,
-    popular: servers.length >= 5,
+    popular:
+      footballLeagueTier(m.league_name ?? "") >= 75 ||
+      hasBigClub(home, away),
     teams: {
       home: { name: home, badge: m.home_team_logo ?? "" },
       away: { name: away, badge: m.away_team_logo ?? "" },
@@ -362,6 +367,41 @@ function normaliseFxMatch(m: FxMatch): EnrichedMatch & { _fxServers: FxServer[] 
       : undefined,
     _fxServers: servers,
   };
+}
+
+// 1xAPI often lists one fixture several times ("Spain La Liga", "SPA D1",
+// "LaLiga") with slightly different team names ("Athletic Bilbao" vs
+// "Athletic Club", "Alaves" vs "Alavés"). Treat two entries as the same
+// fixture when kickoffs are within 20 min and both the home and the away
+// names share a distinctive word.
+const GENERIC_NAME_WORDS = new Set([
+  "fc", "cf", "sc", "ac", "as", "cd", "ca", "afc", "sv", "fk", "club", "de", "del",
+  "la", "el", "the", "and", "united", "city", "town", "women", "u19", "u20", "u21", "u23",
+]);
+
+function nameWords(name = ""): Set<string> {
+  return new Set(
+    name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2 && !GENERIC_NAME_WORDS.has(w)),
+  );
+}
+
+function sharesWord(a = "", b = ""): boolean {
+  const wa = nameWords(a);
+  for (const w of nameWords(b)) if (wa.has(w)) return true;
+  return false;
+}
+
+function isSameFixture(a: EnrichedMatch, b: EnrichedMatch): boolean {
+  return (
+    Math.abs(a.date - b.date) <= 20 * 60 * 1000 &&
+    sharesWord(a.teams?.home?.name, b.teams?.home?.name) &&
+    sharesWord(a.teams?.away?.name, b.teams?.away?.name)
+  );
 }
 
 export async function fetchFootballLive(): Promise<EnrichedMatch[]> {
@@ -385,13 +425,28 @@ export async function fetchFootballLive(): Promise<EnrichedMatch[]> {
       console.error("[football-live] error:", data.error, data.message ?? "");
       return [];
     }
-    const seen = new Set<string>();
-    const out: EnrichedMatch[] = [];
+    const out: (EnrichedMatch & { _fxServers: FxServer[] })[] = [];
     for (const raw of data.matches ?? []) {
       const m = normaliseFxMatch(raw);
-      if (seen.has(m.id)) continue;
-      seen.add(m.id);
-      out.push(m);
+      const dup = out.find((x) => isSameFixture(x, m));
+      if (!dup) {
+        out.push(m);
+        continue;
+      }
+      // Same fixture listed again under another league spelling/provider —
+      // fold its servers into the first card instead of showing duplicates.
+      const urls = new Set(dup._fxServers.map((srv) => srv.url));
+      for (const srv of m._fxServers) {
+        if (urls.has(srv.url)) continue;
+        urls.add(srv.url);
+        dup._fxServers.push(srv);
+      }
+      dup.sources = dup._fxServers.map((_, i) => ({ source: "1xapi", id: String(i) }));
+      dup.popular = dup.popular || m.popular;
+      if (m.status === "live") dup.status = "live";
+      if (!dup.score && m.score) dup.score = m.score;
+      if (dup.teams?.home && !dup.teams.home.badge) dup.teams.home.badge = m.teams?.home?.badge ?? "";
+      if (dup.teams?.away && !dup.teams.away.badge) dup.teams.away.badge = m.teams?.away?.badge ?? "";
     }
     cacheSet("fx", out);
     return out;
