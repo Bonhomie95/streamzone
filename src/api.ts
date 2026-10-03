@@ -683,6 +683,12 @@ export function backdropImg(path: string, size = "w1280") {
   return path ? `${IMG_BASE}/${size}${path}` : "";
 }
 
+// Embed providers die, get parked or move domain constantly — this list was
+// almost entirely dead (6 domains no longer resolved at all, VidBinge had been
+// sold to an ad redirector). MovieWatch probes every entry through
+// /api/movie-probe and plays the first live one, so order = preference, not
+// a promise. Re-check with `node scripts/test-movie-sources.mjs` when playback
+// breaks again; replace whatever that reports as dead.
 export function getEmbedSources(
   tmdbId: number,
   type: MediaType,
@@ -693,76 +699,83 @@ export function getEmbedSources(
 
   const sources = [
     {
-      name: "Embed.su",
+      name: "VidCore",
       url: isTV
-        ? `https://embed.su/embed/tv/${tmdbId}/${season}/${episode}`
-        : `https://embed.su/embed/movie/${tmdbId}`,
+        ? `https://vidcore.org/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidcore.org/embed/movie/${tmdbId}`,
     },
     {
       name: "VidSrc",
       url: isTV
-        ? `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`
-        : `https://vidsrc.cc/v2/embed/movie/${tmdbId}`,
+        ? `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidsrc.to/embed/movie/${tmdbId}`,
     },
     {
+      name: "VidFast",
+      url: isTV
+        ? `https://vidfast.vc/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidfast.vc/movie/${tmdbId}`,
+    },
+    {
+      // Moved from player.videasy.net — the old host only 301s here now.
       name: "Videasy",
       url: isTV
-        ? `https://player.videasy.net/tv/${tmdbId}/${season}/${episode}`
-        : `https://player.videasy.net/movie/${tmdbId}`,
+        ? `https://player.videasy.to/tv/${tmdbId}/${season}/${episode}`
+        : `https://player.videasy.to/movie/${tmdbId}`,
     },
     {
-      name: "VidBinge",
-      url: isTV
-        ? `https://vidbinge.dev/embed/tv/${tmdbId}/${season}/${episode}`
-        : `https://vidbinge.dev/embed/movie/${tmdbId}`,
-    },
-    {
+      // 2embed.skin redirects /embed/ to its own landing page; .cc is the
+      // host it tells you to embed.
       name: "2Embed",
       url: isTV
-        ? `https://www.2embed.skin/embedtv/${tmdbId}&s=${season}&e=${episode}`
-        : `https://www.2embed.skin/embed/${tmdbId}`,
+        ? `https://www.2embed.cc/embedtv/${tmdbId}&s=${season}&e=${episode}`
+        : `https://www.2embed.cc/embed/${tmdbId}`,
     },
     {
-      name: "MoviesAPI",
+      // Always serves a player shell, so the probe can't tell a real hit from
+      // "We couldn't find this content" — keep it below sources that 404
+      // honestly when they have nothing.
+      name: "VidLink",
       url: isTV
-        ? `https://moviesapi.club/tv/${tmdbId}-${season}-${episode}`
-        : `https://moviesapi.club/movie/${tmdbId}`,
+        ? `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidlink.pro/movie/${tmdbId}`,
     },
     {
-      name: "AutoEmbed",
+      name: "VidSrc.su",
       url: isTV
-        ? `https://player.autoembed.cc/embed/tv/${tmdbId}/${season}/${episode}`
-        : `https://player.autoembed.cc/embed/movie/${tmdbId}`,
+        ? `https://vidsrc.su/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidsrc.su/embed/movie/${tmdbId}`,
     },
     {
-      name: "VidSrc.xyz",
+      name: "VidSrc.rip",
       url: isTV
-        ? `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
-        : `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`,
+        ? `https://vidsrc.rip/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://vidsrc.rip/embed/movie/${tmdbId}`,
     },
     {
-      name: "NontonFlix",
+      name: "VidSrc.net",
       url: isTV
-        ? `https://nontonflix.com/embed/tv/${tmdbId}/${season}/${episode}`
-        : `https://nontonflix.com/embed/movie/${tmdbId}`,
+        ? `https://vidsrc.net/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
+        : `https://vidsrc.net/embed/movie?tmdb=${tmdbId}`,
     },
     {
+      // SuperEmbed's own player; superembed.stream/embed/* now 404s.
       name: "SuperEmbed",
       url: isTV
-        ? `https://superembed.stream/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
-        : `https://superembed.stream/embed/movie?tmdb=${tmdbId}`,
+        ? `https://multiembed.mov/directstream.php?video_id=${tmdbId}&tmdb=1&s=${season}&e=${episode}`
+        : `https://multiembed.mov/directstream.php?video_id=${tmdbId}&tmdb=1`,
     },
     {
-      name: "EmbedSoap",
+      name: "VidZee",
       url: isTV
-        ? `https://www.embedsoap.net/embed/tv/?id=${tmdbId}&s=${season}&e=${episode}`
-        : `https://www.embedsoap.net/embed/movie/?id=${tmdbId}`,
+        ? `https://player.vidzee.wtf/embed/tv/${tmdbId}/${season}/${episode}`
+        : `https://player.vidzee.wtf/embed/movie/${tmdbId}`,
     },
     {
-      name: "VidSrc.in",
+      name: "Smashy",
       url: isTV
-        ? `https://vidsrc.in/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`
-        : `https://vidsrc.in/embed/movie?tmdb=${tmdbId}`,
+        ? `https://player.smashy.stream/tv/${tmdbId}?s=${season}&e=${episode}`
+        : `https://player.smashy.stream/movie/${tmdbId}`,
     },
   ];
 
