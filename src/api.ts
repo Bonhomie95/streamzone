@@ -609,11 +609,16 @@ export function streamProxyUrl(url: string, headers?: Record<string, string>): s
 }
 
 // ─── fetchAllMatches ──────────────────────────────────────────────
-// Football: 1xAPI only. Other sports: streamed.pk (richer data: badges,
-// posters), then DaddyLive events streamed.pk doesn't have, then any rare
-// non-football 1xAPI match — football from the free sources is discarded.
-// All three are fetched in parallel; onFirstLoad(matches) fires as soon as
-// the first source returns something so the grid renders immediately.
+// Football normally comes from the paid 1xAPI only, with streamed.pk and
+// DaddyLive supplying every other sport (richer data: badges, posters).
+//
+// When the 1xAPI subscription lapses it 403s and returns nothing, which would
+// empty the football section entirely — so if it yields no football, the free
+// sources stop being filtered and cover football too. No flag to flip: paying
+// again silently takes football back off them.
+//
+// All three are fetched in parallel; onFirstLoad(matches) fires as soon as the
+// first source returns something so the grid renders immediately.
 export async function fetchAllMatches(
   onFirstLoad?: (matches: EnrichedMatch[]) => void
 ): Promise<EnrichedMatch[]> {
@@ -624,30 +629,37 @@ export async function fetchAllMatches(
     onFirstLoad?.(matches);
   }
 
-  const [fxMatches, streamedOther, daddyOther] = await Promise.all([
+  const [fxMatches, streamedAll, daddyAll] = await Promise.all([
     fetchFootballLive()
       .then((ms) => (fireFirstLoad(ms), ms))
       .catch(() => [] as EnrichedMatch[]),
     fetchStreamedMatches()
-      .then((ms) => ms.filter((m) => !isFootball(m)))
-      .then((ms) => (fireFirstLoad(ms), ms))
+      .then((ms) => (fireFirstLoad(ms.filter((m) => !isFootball(m))), ms))
       .catch(() => [] as EnrichedMatch[]),
     fetchDaddyEvents()
-      .then((ms) => ms.filter((m) => !isFootball(m)))
-      .then((ms) => (fireFirstLoad(ms), ms))
+      .then((ms) => (fireFirstLoad(ms.filter((m) => !isFootball(m))), ms))
       .catch(() => [] as EnrichedMatch[]),
   ]);
 
-  const football = fxMatches.filter(isFootball);
-  const others: EnrichedMatch[] = [];
+  const fxFootball = fxMatches.filter(isFootball);
+  // Paid source is live → free sources contribute everything except football.
+  // Paid source is down or unsubscribed → they fill football in as well.
+  const keep = fxFootball.length > 0 ? (m: EnrichedMatch) => !isFootball(m) : () => true;
+  const freeMatches = [...streamedAll, ...daddyAll].filter(keep);
+
+  const merged: EnrichedMatch[] = [];
   const seen = new Set<string>();
-  for (const m of [...streamedOther, ...daddyOther, ...fxMatches.filter((x) => !isFootball(x))]) {
+  for (const m of [
+    ...fxFootball,
+    ...freeMatches,
+    ...fxMatches.filter((x) => !isFootball(x)),
+  ]) {
     const k = `${normTitle(m.title)}::${m.status}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    others.push(m);
+    merged.push(m);
   }
-  return [...football, ...others];
+  return merged;
 }
 
 export async function fetchStreams(

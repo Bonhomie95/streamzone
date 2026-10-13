@@ -14,17 +14,26 @@
  * Responses are cached for FOOTBALL_LIVE_CACHE_MIN minutes (default 30),
  * concurrent cache misses share one upstream fetch, and if upstream fails
  * (quota exhausted, outage) the last good response is served ("STALE").
+ *
+ * With no stale response to fall back on — an expired subscription, say — the
+ * failure itself is cached for FOOTBALL_LIVE_FAIL_CACHE_SEC seconds (default
+ * 300) so a dead upstream costs one slow request per window instead of one per
+ * visitor. The frontend treats an empty football list as "fall back to the free
+ * sources", so this is the path every page load takes while unsubscribed.
  */
 const HOST = "football-live-streaming-api.p.rapidapi.com";
 const ALLOWED_PARAMS = ["page", "status", "date", "type", "league"];
 
 const cache = new Map(); // cacheKey -> { body, at }
+const failures = new Map(); // cacheKey -> { result, at }
 const inflight = new Map(); // cacheKey -> Promise<result>
 let lastRemaining = null;
 
 const ttlMs = () => (Number(process.env.FOOTBALL_LIVE_CACHE_MIN) || 30) * 60_000;
 const maxPages = () =>
   Math.min(Math.max(Number(process.env.FOOTBALL_LIVE_MAX_PAGES) || 15, 1), 40);
+const failTtlMs = () =>
+  Math.max(Number(process.env.FOOTBALL_LIVE_FAIL_CACHE_SEC) || 300, 0) * 1000;
 const upcomingHours = () =>
   Math.min(Math.max(Number(process.env.FOOTBALL_LIVE_UPCOMING_HOURS) || 6, 0), 48);
 
@@ -131,6 +140,11 @@ export async function getFootballLive(query = {}) {
     return { status: 200, body: hit.body, cache: "HIT", remaining: lastRemaining };
   }
 
+  const failed = failures.get(cacheKey);
+  if (failed && Date.now() - failed.at < failTtlMs()) {
+    return { ...failed.result, cache: "FAIL-CACHED", remaining: lastRemaining };
+  }
+
   if (!inflight.has(cacheKey)) {
     inflight.set(
       cacheKey,
@@ -144,14 +158,18 @@ export async function getFootballLive(query = {}) {
     const result = await inflight.get(cacheKey);
     if (result.status === 200) {
       cache.set(cacheKey, { body: result.body, at: Date.now() });
+      failures.delete(cacheKey);
       return { ...result, cache: "MISS", remaining: lastRemaining };
     }
     if (hit) return { status: 200, body: hit.body, cache: "STALE", remaining: lastRemaining };
+    failures.set(cacheKey, { result, at: Date.now() });
     return { ...result, remaining: lastRemaining };
   } catch (err) {
     console.error("[football-live] fetch error:", err.message);
     if (hit) return { status: 200, body: hit.body, cache: "STALE", remaining: lastRemaining };
-    return { status: 502, body: { error: "UPSTREAM_ERROR", message: err.message } };
+    const result = { status: 502, body: { error: "UPSTREAM_ERROR", message: err.message } };
+    failures.set(cacheKey, { result, at: Date.now() });
+    return result;
   }
 }
 
