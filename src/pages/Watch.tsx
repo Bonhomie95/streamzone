@@ -20,7 +20,6 @@ import {
   fetchStreams,
   fetchAllMatches,
   badgeUrl,
-  getDaddyStreams,
   getFootballLiveStreams,
   isMediaStream,
   isStreamHostFailed,
@@ -324,31 +323,6 @@ export default function Watch() {
       if (s.length > 0)
         setActiveStream(s.find((x) => !isStreamHostFailed(x.embedUrl)) ?? s[0]);
       setLoadingStreams(false);
-      return;
-    }
-
-    // DaddyLive: stream URLs are embedded in the match object as _daddyUrls.
-    // They survive localStorage/sessionStorage because JSON.stringify includes
-    // all own enumerable properties — _daddyUrls is set directly on the object,
-    // not on the prototype, so it round-trips correctly.
-    // If the match came from the raw API fallback path and _daddyUrls is missing
-    // (shouldn't happen but defensive), re-fetch DaddyLive to recover them.
-    if (m.id.startsWith("daddy_")) {
-      let s = getDaddyStreams(m);
-      if (s.length === 0) {
-        // _daddyUrls was lost — re-fetch and find the match
-        try {
-          const all = await fetchAllMatches();
-          const fresh = all.find((x) => x.id === m.id);
-          if (fresh) s = getDaddyStreams(fresh);
-        } catch {
-          /* noop */
-        }
-      }
-      setStreams(s);
-      if (s.length > 0) setActiveStream(s[0]);
-      setLoadingStreams(false);
-      probeStreams(s);
       return;
     }
 
@@ -863,7 +837,7 @@ export default function Watch() {
           }}
         >
           <ViewerBadge
-            id={matchId?.startsWith("daddy_") ? "live" : (matchId ?? "")}
+            id={matchId ?? ""}
             active={!!activeStream}
             large
           />

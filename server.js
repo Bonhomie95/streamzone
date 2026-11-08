@@ -332,49 +332,6 @@ app.get("/api/status", async (req, res) => {
   res.json({ keys: statuses, activeKeyIndex });
 });
 
-// ─── DaddyLive events proxy ────────────────────────────────────────
-// The client used to fetch https://daddylive.eu/api/events directly from
-// the browser. streamed.pk happens to send permissive CORS headers (that's
-// the only reason its equivalent direct fetch has ever worked), but
-// daddylive.eu isn't designed to be called cross-origin from arbitrary
-// sites and doesn't — so that fetch failed with a CORS error on every
-// single load, silently swallowed by the client's `.catch(() => [])`,
-// meaning DaddyLive matches never actually loaded regardless of whether
-// streamed.pk was up. A server-to-server fetch has no CORS restriction at
-// all, so proxying it here fixes that unconditionally.
-let _daddyEventsCache = null;
-let _daddyEventsCachedAt = 0;
-const DADDY_EVENTS_TTL = 60 * 1000;
-
-app.get("/api/daddy-events", apiRateLimit(30), async (req, res) => {
-  if (_daddyEventsCache && Date.now() - _daddyEventsCachedAt < DADDY_EVENTS_TTL) {
-    res.set("Content-Type", "application/json");
-    return res.send(_daddyEventsCache);
-  }
-  try {
-    const upstream = await fetch("https://daddylive.eu/api/events", {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
-    const text = await upstream.text();
-    if (!upstream.ok) {
-      console.warn(`[daddy-events] upstream ${upstream.status}`);
-      return res.status(upstream.status).type("application/json").send(text);
-    }
-    _daddyEventsCache = text;
-    _daddyEventsCachedAt = Date.now();
-    res.set("Content-Type", "application/json");
-    return res.send(text);
-  } catch (err) {
-    console.error("[daddy-events] fetch error:", err.message);
-    return res.status(502).json({ error: "UPSTREAM_ERROR", message: err.message });
-  }
-});
-
 // ─── Football Live Streaming API (RapidAPI / 1xAPI) ──────────────
 // Keeps RAPIDAPI_KEY server-side and caches responses (free plan = 50
 // requests/day). Logic shared with Vercel — see api/_lib/footballLive.js.
@@ -393,7 +350,7 @@ app.get("/api/stream-proxy", apiRateLimit(900), handleStreamProxy);
 // CSP frame-ancestors headers. Required for Smart TV browsers (Tizen, webOS,
 // Android TV) which enforce these headers and block iframes that desktop
 // browsers would load silently.
-// Sports source domains (DaddyLive mirrors especially) rotate frequently,
+// Sports source domains rotate frequently,
 // so this validates the target is a well-formed http(s) URL rather than
 // maintaining a fixed allowlist, and relies on the rate limiter to guard
 // against abuse as an open relay.

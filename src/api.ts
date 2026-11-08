@@ -14,15 +14,27 @@ import { footballLeagueTier, hasBigClub } from "./utils/matchRelevance";
 const SPORTS_BASE = "https://streamed.pk/api";
 
 // ─── Sports sources ───────────────────────────────────────────────
-// Football comes ONLY from the paid 1xAPI (RapidAPI). streamed.pk and
-// DaddyLive supply every other sport — any football they list is dropped.
+// Football comes ONLY from the paid 1xAPI (RapidAPI); streamed.pk supplies
+// every other sport, and any football it lists is dropped. When 1xAPI is
+// unreachable, streamed.pk covers football too (see fetchAllMatches).
+//
+// DaddyLive used to be a third source. daddylive.eu stopped resolving, so
+// every request sat until it timed out — on Vercel that burned a 15s function
+// invocation per page load to return nothing. Removed 2026-11-08.
 
-// ─── DaddyLive events ───────────────────────────────────────────────
-// Fetched via our own /api/daddy-events server route (see server.js) rather
-// than https://daddylive.eu/api/events directly — daddylive.eu doesn't send
-// CORS headers permitting cross-origin browser fetches, so a direct fetch
-// failed silently on every load.
 const API_TIMEOUT = 10_000;
+
+async function fetchJson<T>(url: string, timeout = API_TIMEOUT): Promise<T> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 // ─── TTL cache (60 s) ─────────────────────────────────────────────
 // Prevents redundant fetches on back-navigation and rapid refreshes.
@@ -42,151 +54,16 @@ function cacheSet<T>(key: string, data: T, ttlMs = 60_000): void {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
-function parseDaddyDate(dayStr: string, timeStr: string): number {
-  if (!dayStr || !timeStr || timeStr.toLowerCase() === "live") return Date.now() - 1;
-  try {
-    let t = timeStr.trim();
-    const ampm = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (ampm) {
-      let h = parseInt(ampm[1]);
-      const m = parseInt(ampm[2]);
-      const period = ampm[3].toUpperCase();
-      if (period === "PM" && h !== 12) h += 12;
-      if (period === "AM" && h === 12) h = 0;
-      t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    }
-    const tsUtc = new Date(`${dayStr}T${t}:00Z`).getTime();
-    if (!isNaN(tsUtc)) return tsUtc;
-    const tsLocal = new Date(`${dayStr}T${t}:00`).getTime();
-    return isNaN(tsLocal) ? Date.now() + 3600_000 : tsLocal;
-  } catch {
-    return Date.now() + 3600_000;
-  }
-}
-
-async function fetchJson<T>(url: string, timeout = API_TIMEOUT): Promise<T> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeout);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
 function normTitle(t: string) {
   return t.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-// DaddyLive categories are free text ("Soccer", "Ice Hockey", "Formula 1"…).
-// Map them onto streamed.pk's sport ids so the sidebar groups them together
-// and football can be filtered out reliably.
-export function normaliseSportCategory(raw: string): string {
-  const c = raw.toLowerCase().trim();
-  if (/american football|\bnfl\b|\bncaaf\b|\bcfl\b/.test(c)) return "american-football";
-  if (/soccer|football|futbol|premier league|la liga|laliga|bundesliga|serie a|ligue 1|eredivisie|uefa|champions league|europa league|fifa|\bmls\b|\befl\b|fa cup|copa/.test(c))
-    return "football";
-  if (/basket|\bnba\b|\bwnba\b|euroleague|\bncaab\b/.test(c)) return "basketball";
-  if (/hockey|\bnhl\b|\bkhl\b/.test(c)) return "hockey";
-  if (/baseball|\bmlb\b/.test(c)) return "baseball";
-  if (/motor|formula|\bf1\b|motogp|nascar|indycar|rally|racing/.test(c)) return "motor-sports";
-  if (/boxing|\bmma\b|\bufc\b|wwe|wrestling|fight|kickboxing/.test(c)) return "fight";
-  if (/tennis|\batp\b|\bwta\b/.test(c)) return "tennis";
-  if (/rugby/.test(c)) return "rugby";
-  if (/cricket|\bipl\b/.test(c)) return "cricket";
-  if (/golf|\bpga\b/.test(c)) return "golf";
-  if (/darts/.test(c)) return "darts";
-  if (/snooker|billiard|pool/.test(c)) return "billiards";
-  if (/\bafl\b|aussie rules|australian rules/.test(c)) return "afl";
-  return c.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "other";
-}
-
 const isFootball = (m: EnrichedMatch) => m.category === "football";
-
-// ─── DaddyLive ────────────────────────────────────────────────────
-export async function fetchDaddyEvents(): Promise<EnrichedMatch[]> {
-  const cached = cacheGet<EnrichedMatch[]>("daddy");
-  if (cached) return cached;
-
-  try {
-    const days = await fetchJson<
-      Array<{
-        day: string;
-        categories: Record<
-          string,
-          Array<{
-            time: string;
-            event: string;
-            channels: Array<{
-              channel_name: string;
-              channel_id: string;
-              url: string;
-            }>;
-            source: string;
-          }>
-        >;
-      }>
-    >(`/api/daddy-events`);
-
-    const matchMap = new Map<string, EnrichedMatch & { _daddyUrls: string[] }>();
-
-    for (const day of days) {
-      for (const [category, events] of Object.entries(day.categories)) {
-        for (const ev of events) {
-          const isLive = ev.time?.toLowerCase() === "live";
-          const sportCategory = normaliseSportCategory(category);
-          const colonIdx = ev.event.indexOf(":");
-          const matchTitle =
-            colonIdx > -1 ? ev.event.slice(colonIdx + 1).trim() : ev.event;
-          const vsIdx = matchTitle.toLowerCase().indexOf(" vs ");
-          const teams =
-            vsIdx > -1
-              ? {
-                  home: { name: matchTitle.slice(0, vsIdx).trim(), badge: "" },
-                  away: { name: matchTitle.slice(vsIdx + 4).trim(), badge: "" },
-                }
-              : undefined;
-
-          const channelId = ev.channels[0]?.channel_id ?? "";
-          const rawId = channelId ? `${channelId}_${matchTitle}` : ev.event;
-          const id = `daddy_${rawId}`;
-
-          const entry = {
-            id,
-            title: matchTitle,
-            category: sportCategory,
-            date: parseDaddyDate(day.day, ev.time ?? ""),
-            popular: false,
-            teams,
-            sources: ev.channels.map((ch) => ({
-              source: "daddy",
-              id: ch.channel_id,
-            })),
-            status: (isLive ? "live" : "upcoming") as "live" | "upcoming",
-            _daddyUrls: ev.channels.map((ch) => ch.url),
-          };
-
-          const existing = matchMap.get(id);
-          if (!existing || (isLive && existing.status !== "live")) {
-            matchMap.set(id, entry);
-          }
-        }
-      }
-    }
-    const result = Array.from(matchMap.values()) as (EnrichedMatch & { _daddyUrls: string[] })[];
-    cacheSet("daddy", result);
-    return result;
-  } catch {
-    return [];
-  }
-}
 
 // Wraps a third-party embed URL so it's fetched same-origin through
 // /embed-proxy, which strips X-Frame-Options / CSP frame-ancestors headers.
 // `parentSite` should be the domain that legitimately embeds this stream
-// (e.g. "https://streamed.pk/" or "https://daddylive.eu/") — many stream
+// (e.g. "https://streamed.pk/") — many stream
 // hosts 404/block requests whose Referer isn't their known embedding
 // parent, as basic anti-leech protection, so this matters even though the
 // framing block is a separate issue.
@@ -195,22 +72,6 @@ export function proxiedEmbedUrl(url: string, parentSite?: string): string {
   return parentSite
     ? `/embed-proxy?${q}&ref=${encodeURIComponent(parentSite)}`
     : `/embed-proxy?${q}`;
-}
-
-// getDaddyStreams extracts the embedded stream URLs from a DaddyLive match.
-// _daddyUrls is preserved through storage because we JSON.stringify the full
-// match object (including non-enumerable lookalike fields) when caching to
-// localStorage/sessionStorage, and JSON.parse restores it on the other side.
-export function getDaddyStreams(match: EnrichedMatch): Stream[] {
-  const urls: string[] = (match as any)._daddyUrls ?? [];
-  return urls.map((url, i) => ({
-    id: `daddy_${i}`,
-    streamNo: i + 1,
-    language: "en",
-    hd: true,
-    embedUrl: url,
-    source: "DaddyLive",
-  }));
 }
 
 // ─── streamed.pk ──────────────────────────────────────────────────
@@ -288,7 +149,8 @@ async function fetchStreamedMatches(): Promise<EnrichedMatch[]> {
 // ─── Football Live Streaming API (RapidAPI / 1xAPI) ───────────────
 // Fetched via /api/football-live (server.js / api/football-live.js) so the
 // RapidAPI key stays server-side. Each match carries its raw stream servers
-// as `_fxServers` — same round-trip-through-storage trick as `_daddyUrls`.
+// as `_fxServers`: JSON.stringify keeps own enumerable properties, so the
+// field survives the round trip through localStorage/sessionStorage.
 interface FxServer {
   name?: string;
   url: string;
@@ -609,15 +471,15 @@ export function streamProxyUrl(url: string, headers?: Record<string, string>): s
 }
 
 // ─── fetchAllMatches ──────────────────────────────────────────────
-// Football normally comes from the paid 1xAPI only, with streamed.pk and
-// DaddyLive supplying every other sport (richer data: badges, posters).
+// Football normally comes from the paid 1xAPI only, with streamed.pk supplying
+// every other sport (richer data: badges, posters).
 //
-// When the 1xAPI subscription lapses it 403s and returns nothing, which would
-// empty the football section entirely — so if it yields no football, the free
-// sources stop being filtered and cover football too. No flag to flip: paying
-// again silently takes football back off them.
+// When 1xAPI is unreachable — a lapsed subscription 403s, an outage 502s — it
+// returns nothing, which would empty the football section entirely. So if it
+// yields no football, streamed.pk stops being football-filtered and covers it
+// too. No flag to flip: a working 1xAPI silently takes football back off it.
 //
-// All three are fetched in parallel; onFirstLoad(matches) fires as soon as the
+// Both are fetched in parallel; onFirstLoad(matches) fires as soon as the
 // first source returns something so the grid renders immediately.
 export async function fetchAllMatches(
   onFirstLoad?: (matches: EnrichedMatch[]) => void
@@ -629,14 +491,11 @@ export async function fetchAllMatches(
     onFirstLoad?.(matches);
   }
 
-  const [fxMatches, streamedAll, daddyAll] = await Promise.all([
+  const [fxMatches, streamedAll] = await Promise.all([
     fetchFootballLive()
       .then((ms) => (fireFirstLoad(ms), ms))
       .catch(() => [] as EnrichedMatch[]),
     fetchStreamedMatches()
-      .then((ms) => (fireFirstLoad(ms.filter((m) => !isFootball(m))), ms))
-      .catch(() => [] as EnrichedMatch[]),
-    fetchDaddyEvents()
       .then((ms) => (fireFirstLoad(ms.filter((m) => !isFootball(m))), ms))
       .catch(() => [] as EnrichedMatch[]),
   ]);
@@ -645,7 +504,7 @@ export async function fetchAllMatches(
   // Paid source is live → free sources contribute everything except football.
   // Paid source is down or unsubscribed → they fill football in as well.
   const keep = fxFootball.length > 0 ? (m: EnrichedMatch) => !isFootball(m) : () => true;
-  const freeMatches = [...streamedAll, ...daddyAll].filter(keep);
+  const freeMatches = streamedAll.filter(keep);
 
   const merged: EnrichedMatch[] = [];
   const seen = new Set<string>();

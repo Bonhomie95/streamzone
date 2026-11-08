@@ -32,6 +32,10 @@ let lastRemaining = null;
 const ttlMs = () => (Number(process.env.FOOTBALL_LIVE_CACHE_MIN) || 30) * 60_000;
 const maxPages = () =>
   Math.min(Math.max(Number(process.env.FOOTBALL_LIVE_MAX_PAGES) || 15, 1), 40);
+// One slow page must not eat the whole function budget, so this is well under
+// the Vercel maxDuration in vercel.json.
+const pageTimeoutMs = () =>
+  Math.min(Math.max(Number(process.env.FOOTBALL_LIVE_PAGE_TIMEOUT_MS) || 5_000, 1_000), 30_000);
 const failTtlMs = () =>
   Math.max(Number(process.env.FOOTBALL_LIVE_FAIL_CACHE_SEC) || 300, 0) * 1000;
 const upcomingHours = () =>
@@ -47,7 +51,7 @@ async function callUpstream(path, params, key) {
   const qs = params.toString();
   const res = await fetch(`https://${HOST}/${path}${qs ? `?${qs}` : ""}`, {
     headers: { "x-rapidapi-key": key, "x-rapidapi-host": HOST },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(pageTimeoutMs()),
   });
   const remaining = res.headers.get("x-ratelimit-requests-remaining");
   if (remaining != null) lastRemaining = remaining;
@@ -71,7 +75,19 @@ async function fetchPages(path, baseParams, key, limit, shouldStop) {
   for (let page = 1; page <= limit; page++) {
     const p = new URLSearchParams(baseParams);
     p.set("page", String(page));
-    const r = await callUpstream(path, p, key);
+    let r;
+    try {
+      r = await callUpstream(path, p, key);
+    } catch (err) {
+      // A timeout or network blip mid-walk used to throw straight out of
+      // getFootballLive, discarding every page already fetched and 502ing the
+      // whole request. Stop walking, keep what we have.
+      console.warn(`[football-live] /${path} page ${page} failed: ${err.message}`);
+      if (page === 1) {
+        return { error: { status: 502, body: { error: "UPSTREAM_ERROR", message: err.message } } };
+      }
+      break;
+    }
     if (r.status !== 200) {
       if (page === 1) return { error: r };
       break; // keep what earlier pages returned
